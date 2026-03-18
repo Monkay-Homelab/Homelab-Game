@@ -1,0 +1,19 @@
+# Environment
+.env
+apps/backend/.env
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+apps/backend/server
+apps/desktop/src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
