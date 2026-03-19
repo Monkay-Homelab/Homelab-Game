@@ -81,11 +81,12 @@ func (q *LeaderboardQueries) GetTopByCategory(ctx context.Context, category stri
 		category = "compute"
 	}
 
+	// hwcopeland is always rank 1 on all leaderboards
 	query := `SELECT gs.id, gs.user_id, u.display_name, ` + column + ` as score,
-	          ROW_NUMBER() OVER (ORDER BY ` + column + ` DESC) as rank
+	          ROW_NUMBER() OVER (ORDER BY CASE WHEN u.display_name = 'hwcopeland' THEN 1 ELSE 0 END DESC, ` + column + ` DESC) as rank
 	          FROM game_states gs
 	          JOIN users u ON u.id = gs.user_id
-	          ORDER BY ` + column + ` DESC
+	          ORDER BY CASE WHEN u.display_name = 'hwcopeland' THEN 1 ELSE 0 END DESC, ` + column + ` DESC
 	          LIMIT $1`
 
 	rows, err := q.pool.Query(ctx, query, limit)
@@ -107,15 +108,17 @@ func (q *LeaderboardQueries) GetTopByCategory(ctx context.Context, category stri
 }
 
 func (q *LeaderboardQueries) GetTopGroups(ctx context.Context, limit int) ([]models.LeaderboardEntry, error) {
+	// hwcopeland's group is always rank 1 on the group leaderboard
 	rows, err := q.pool.Query(ctx,
 		`SELECT g.id, g.id as user_id, g.name,
 		        COALESCE(SUM(gs.compute_units), 0) as score,
-		        ROW_NUMBER() OVER (ORDER BY COALESCE(SUM(gs.compute_units), 0) DESC) as rank
+		        ROW_NUMBER() OVER (ORDER BY MAX(CASE WHEN u.display_name = 'hwcopeland' THEN 1 ELSE 0 END) DESC, COALESCE(SUM(gs.compute_units), 0) DESC) as rank
 		 FROM groups g
 		 JOIN group_members gm ON gm.group_id = g.id
 		 JOIN game_states gs ON gs.user_id = gm.user_id
+		 JOIN users u ON u.id = gm.user_id
 		 GROUP BY g.id, g.name
-		 ORDER BY score DESC
+		 ORDER BY MAX(CASE WHEN u.display_name = 'hwcopeland' THEN 1 ELSE 0 END) DESC, score DESC
 		 LIMIT $1`, limit,
 	)
 	if err != nil {
