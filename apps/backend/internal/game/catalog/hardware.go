@@ -35,6 +35,7 @@ var Hardware = []HardwareTemplate{
 	{Name: "CyberPower UPS 1500VA", Type: "ups", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(2), PowerDraw: 0, ComputePerTick: 0, Cost: 800},
 	{Name: "1U Patch Panel", Type: "patch_panel", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(1), PowerDraw: 0, ComputePerTick: 0, Cost: 200},
 	{Name: "1U Rack Shelf", Type: "shelf", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(1), PowerDraw: 0, ComputePerTick: 0, Cost: 150},
+	{Name: "Mac Mini M4", Type: "server", MinTier: models.TierRack12U, SlotsUsed, 1, PowerDraw: 40, ComputePerTick: 30, Cost: 6969},
 
 	// 24U Rack tier
 	{Name: "Dell PowerEdge R730", Type: "server", MinTier: models.TierRack24U, RackUnitsUsed: intPtr(2), PowerDraw: 350, ComputePerTick: 60, Cost: 5000},
@@ -50,6 +51,7 @@ var Hardware = []HardwareTemplate{
 	{Name: "Dell PowerEdge R750", Type: "server", MinTier: models.TierRack48U, RackUnitsUsed: intPtr(2), PowerDraw: 700, ComputePerTick: 250, Cost: 40000},
 	{Name: "GPU Server (4x A100)", Type: "gpu_server", MinTier: models.TierRack48U, RackUnitsUsed: intPtr(4), PowerDraw: 2000, ComputePerTick: 500, Cost: 100000},
 	{Name: "Fiber Switch 48-port", Type: "switch", MinTier: models.TierRack48U, RackUnitsUsed: intPtr(1), PowerDraw: 80, ComputePerTick: 0, Cost: 15000},
+	{Name: "AWS at Home", Type: "server", MinTier: models.TierRack48U, RackUnitsUsed: intPtr(48), Powerdraw: 20000, ComputePerTick: 10000, Cost: 10000000},
 }
 
 func GetHardwareByName(name string) *HardwareTemplate {
