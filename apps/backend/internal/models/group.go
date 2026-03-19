@@ -12,8 +12,18 @@ type Group struct {
 }
 
 type GroupMember struct {
-	GroupID  string    `json:"group_id"`
+	GroupID     string    `json:"group_id"`
+	UserID      string    `json:"user_id"`
+	Role        string    `json:"role"`
+	JoinedAt    time.Time `json:"joined_at"`
+	DisplayName string    `json:"display_name,omitempty"`
+}
+
+type LeaderboardEntry struct {
+	ID       string    `json:"id"`
 	UserID   string    `json:"user_id"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
+	Username string    `json:"username"`
+	Category string    `json:"category"`
+	Score    int64     `json:"score"`
+	Rank     int       `json:"rank"`
 }

@@ -150,9 +150,10 @@ An AFK/clicker simulation game based around the concept of a homelab — the rea
 ### Backend (api.homelab.living)
 
 - **Language:** Go
-- **API:** REST or gRPC (TBD)
+- **API:** REST for actions, WebSocket for real-time server-pushed events (random events, group activity, live notifications)
 - **Auth:** OAuth2 (Google, Apple, Discord) + email/password
 - **Game engine:** Server-side tick system — calculates idle progress, processes events, validates client actions
+- **Real-time:** Client-side interpolation for smooth counter ticking between server syncs. WebSocket for server-initiated events (drive failures, traffic spikes, group activity).
 - **Anti-cheat:** All state mutations validated server-side
 
 ### Database
