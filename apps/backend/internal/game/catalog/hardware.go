@@ -35,7 +35,7 @@ var Hardware = []HardwareTemplate{
 	{Name: "CyberPower UPS 1500VA", Type: "ups", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(2), PowerDraw: 0, ComputePerTick: 0, Cost: 800},
 	{Name: "1U Patch Panel", Type: "patch_panel", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(1), PowerDraw: 0, ComputePerTick: 0, Cost: 200},
 	{Name: "1U Rack Shelf", Type: "shelf", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(1), PowerDraw: 0, ComputePerTick: 0, Cost: 150},
-	{Name: "Mac Mini M4", Type: "server", MinTier: models.TierRack12U, SlotsUsed, 1, PowerDraw: 40, ComputePerTick: 30, Cost: 6969},
+	{Name: "Mac Mini M4", Type: "server", MinTier: models.TierRack12U, SlotsUsed: 1, PowerDraw: 40, ComputePerTick: 30, Cost: 6969},
 
 	// 24U Rack tier
 	{Name: "Dell PowerEdge R730", Type: "server", MinTier: models.TierRack24U, RackUnitsUsed: intPtr(2), PowerDraw: 350, ComputePerTick: 60, Cost: 5000},
