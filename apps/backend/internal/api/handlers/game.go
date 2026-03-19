@@ -253,7 +253,8 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		errMsg, _ := json.Marshal(map[string]string{"error": err.Error()})
+		http.Error(w, string(errMsg), http.StatusBadRequest)
 		return
 	}
 

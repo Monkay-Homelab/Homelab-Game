@@ -618,6 +618,9 @@ func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, serv
 	if !gs.SaasUnlocked {
 		return nil, fmt.Errorf("must have SaaS unlocked to colo")
 	}
+	if gs.ColoCount >= 100 {
+		return nil, fmt.Errorf("maximum colocations reached")
+	}
 
 	// Snapshot current rack's total income for the colo rack
 	var totalCompute, totalRep, totalMoney int64

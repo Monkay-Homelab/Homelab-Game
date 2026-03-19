@@ -71,7 +71,7 @@ func (q *GameStateQueries) Update(ctx context.Context, gs *models.GameState) err
 		    throttle_multiplier = $22, throttle_ticks_remaining = $23,
 		    datacenter_tier = $24, owns_datacenter = $25, datacenter_level = $26,
 		    datacenter_income_multiplier = $27, last_tick_at = $28, updated_at = NOW()
-		 WHERE id = $1`,
+		 WHERE id = $1 AND user_id = $29`,
 		gs.ID, gs.Tier, gs.ComputeUnits, gs.Reputation, gs.PowerWatts,
 		gs.PowerLimit, gs.Money, gs.HardwareSlots, gs.UsedSlots,
 		gs.RackUnits, gs.UsedRackUnits, gs.ColoCount, gs.ColoMultiplier,
@@ -79,6 +79,6 @@ func (q *GameStateQueries) Update(ctx context.Context, gs *models.GameState) err
 		gs.KnowledgePoints, gs.IdleMultiplier, gs.SaasUnlocked, gs.TotalCustomers,
 		gs.ThrottleMultiplier, gs.ThrottleTicksRemaining, gs.DatacenterTier,
 		gs.OwnsDatacenter, gs.DatacenterLevel, gs.DatacenterIncomeMultiplier,
-		gs.LastTickAt)
+		gs.LastTickAt, gs.UserID)
 	return err
 }

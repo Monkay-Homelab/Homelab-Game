@@ -3,10 +3,24 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"net/mail"
+	"regexp"
+	"strings"
 
 	"github.com/homelab-game/backend/internal/auth"
 	"github.com/homelab-game/backend/internal/database/queries"
 )
+
+var validDisplayName = regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+
+var blockedWords = map[string]bool{
+	"fuck": true, "shit": true, "ass": true, "bitch": true, "dick": true,
+	"cunt": true, "nigger": true, "nigga": true, "faggot": true, "fag": true,
+	"retard": true, "whore": true, "slut": true, "porn": true, "xxx": true,
+	"cock": true, "pussy": true, "tits": true, "nazi": true, "hitler": true,
+}
+
+var blockedPatterns = regexp.MustCompile(`(?i)(https?://|www\.|\.com|\.net|\.org|\.io)`)
 
 type AuthHandler struct {
 	users     *queries.UserQueries
@@ -46,8 +60,45 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Password) < 8 {
-		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+
+	if len(req.DisplayName) < 2 || len(req.DisplayName) > 20 {
+		http.Error(w, `{"error":"display name must be 2-20 characters"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !validDisplayName.MatchString(req.DisplayName) {
+		http.Error(w, `{"error":"display name must be alphanumeric only (a-z, 0-9)"}`, http.StatusBadRequest)
+		return
+	}
+
+	lower := strings.ToLower(req.DisplayName)
+	for word := range blockedWords {
+		if strings.Contains(lower, word) {
+			http.Error(w, `{"error":"display name contains inappropriate content"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	if blockedPatterns.MatchString(req.DisplayName) {
+		http.Error(w, `{"error":"display name cannot contain links"}`, http.StatusBadRequest)
+		return
+	}
+
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+
+	if len(req.Email) > 255 {
+		http.Error(w, `{"error":"email too long"}`, http.StatusBadRequest)
+		return
+	}
+
+	if _, err := mail.ParseAddress(req.Email); err != nil || !strings.Contains(req.Email, ".") {
+		http.Error(w, `{"error":"invalid email address"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Password) < 8 || len(req.Password) > 128 {
+		http.Error(w, `{"error":"password must be 8-128 characters"}`, http.StatusBadRequest)
 		return
 	}
 

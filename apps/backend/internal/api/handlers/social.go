@@ -33,8 +33,8 @@ func (h *SocialHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || len(req.Name) < 3 {
-		http.Error(w, `{"error":"group name must be at least 3 characters"}`, http.StatusBadRequest)
+	if len(req.Name) < 3 || len(req.Name) > 50 {
+		http.Error(w, `{"error":"group name must be 3-50 characters"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -170,6 +170,13 @@ func (h *SocialHandler) PromoteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify target is actually in this group
+	isMember, _ := h.groups.IsMember(r.Context(), group.ID, req.UserID)
+	if !isMember {
+		http.Error(w, `{"error":"user is not in this group"}`, http.StatusBadRequest)
+		return
+	}
+
 	h.groups.SetRole(r.Context(), group.ID, req.UserID, "admin")
 	members, _ := h.groups.GetMembers(r.Context(), group.ID)
 
@@ -203,6 +210,13 @@ func (h *SocialHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 
 	if req.UserID == group.FounderID {
 		http.Error(w, `{"error":"cannot kick the founder"}`, http.StatusForbidden)
+		return
+	}
+
+	// Verify target is actually in this group
+	isMember, _ := h.groups.IsMember(r.Context(), group.ID, req.UserID)
+	if !isMember {
+		http.Error(w, `{"error":"user is not in this group"}`, http.StatusBadRequest)
 		return
 	}
 

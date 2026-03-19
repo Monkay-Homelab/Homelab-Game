@@ -84,6 +84,15 @@ func (q *GroupQueries) RemoveMember(ctx context.Context, groupID, userID string)
 	return err
 }
 
+func (q *GroupQueries) IsMember(ctx context.Context, groupID, userID string) (bool, error) {
+	var count int
+	err := q.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM group_members WHERE group_id = $1 AND user_id = $2`,
+		groupID, userID,
+	).Scan(&count)
+	return count > 0, err
+}
+
 func (q *GroupQueries) GetMembers(ctx context.Context, groupID string) ([]models.GroupMember, error) {
 	rows, err := q.pool.Query(ctx,
 		`SELECT gm.group_id, gm.user_id, gm.role, gm.joined_at, u.display_name

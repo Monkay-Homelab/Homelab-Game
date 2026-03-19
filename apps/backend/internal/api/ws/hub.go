@@ -17,7 +17,24 @@ const (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		allowed := []string{
+			"https://game.homelab.living",
+			"http://game.homelab.living",
+			"https://homelab.living",
+			"http://homelab.living",
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://192.168.3.107:3000",
+		}
+		for _, a := range allowed {
+			if origin == a {
+				return true
+			}
+		}
+		return false
+	},
 }
 
 // Message sent to clients over WebSocket.
@@ -66,7 +83,7 @@ func (h *Hub) HandleConnect(jwtSecret string) http.HandlerFunc {
 		h.clients[claims.UserID] = conn
 		h.mu.Unlock()
 
-		log.Printf("WebSocket connected: %s", claims.UserID)
+		log.Println("WebSocket client connected")
 
 		// Set pong handler and initial read deadline
 		conn.SetReadDeadline(time.Now().Add(pongTimeout))
@@ -99,7 +116,7 @@ func (h *Hub) HandleConnect(jwtSecret string) http.HandlerFunc {
 				delete(h.clients, claims.UserID)
 				h.mu.Unlock()
 				conn.Close()
-				log.Printf("WebSocket disconnected: %s", claims.UserID)
+				log.Println("WebSocket client disconnected")
 			}()
 			for {
 				if _, _, err := conn.ReadMessage(); err != nil {

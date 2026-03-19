@@ -66,21 +66,19 @@ func (q *LeaderboardQueries) UpdateScore(ctx context.Context, userID, category s
 func (q *LeaderboardQueries) GetTopByCategory(ctx context.Context, category string, limit int) ([]models.LeaderboardEntry, error) {
 	// Query directly from game_states for live data
 	var column string
-	switch category {
-	case "compute":
+	// Whitelist categories — never use user input directly in SQL
+	allowed := map[string]string{
+		"compute":    "gs.compute_units",
+		"reputation": "gs.reputation",
+		"colo_count": "gs.colo_count",
+		"money":      "gs.money",
+		"services":   "(SELECT COUNT(*) FROM services s WHERE s.game_state_id = gs.id)",
+		"prestige":   "gs.colo_count",
+	}
+	column, ok := allowed[category]
+	if !ok {
 		column = "gs.compute_units"
-	case "reputation":
-		column = "gs.reputation"
-	case "colo_count":
-		column = "gs.colo_count"
-	case "money":
-		column = "gs.money"
-	case "services":
-		column = "(SELECT COUNT(*) FROM services s WHERE s.game_state_id = gs.id)"
-	case "prestige":
-		column = "gs.colo_count" // prestiges = colo count
-	default:
-		column = "gs.compute_units"
+		category = "compute"
 	}
 
 	query := `SELECT gs.id, gs.user_id, u.display_name, ` + column + ` as score,

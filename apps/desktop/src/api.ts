@@ -11,6 +11,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     },
   });
 
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    window.location.reload();
+    throw new Error('Session expired');
+  }
+
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
@@ -213,6 +219,10 @@ export const api = {
   leaveGroup: () => request<{ ok: boolean }>('/api/social/group/leave', { method: 'POST' }),
   promoteMemeber: (userId: string) => request<any>('/api/social/group/promote', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
   kickMember: (userId: string) => request<any>('/api/social/group/kick', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
-  getLeaderboard: (category: string) => request<LeaderboardData>(`/api/social/leaderboard?category=${category}`),
+  getLeaderboard: (category: string) => {
+    const allowed = ['compute', 'reputation', 'services', 'colo_count', 'prestige', 'money', 'group'];
+    const safe = allowed.includes(category) ? category : 'compute';
+    return request<LeaderboardData>(`/api/social/leaderboard?category=${encodeURIComponent(safe)}`);
+  },
   updateLeaderboard: () => request<{ ok: boolean }>('/api/social/leaderboard/update', { method: 'POST' }),
 };
