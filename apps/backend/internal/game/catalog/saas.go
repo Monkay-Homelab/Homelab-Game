@@ -21,6 +21,7 @@ var SaasServices = []SaasServiceTemplate{
 	{Name: "Web Hosting", Type: "web", MinTier: models.TierRack12U, DeployCost: 4000, ReputationRequired: 80, RevenuePerCustomer: 2, MaxCustomers: 100, PowerRequired: 15, Description: "Shared web hosting for small sites"},
 
 	// 24U Rack — growing services
+	{Name: "VPN Service", Type: "vpn", MinTier: models.TierRack24U, DeployCost: 10000, ReputationRequired: 150, RevenuePerCustomer: 4, MaxCustomers: 200, PowerRequired: 30, Description: "WireGuard VPN subscriptions for privacy-conscious customers"},
 	{Name: "VPS Hosting", Type: "vps", MinTier: models.TierRack24U, DeployCost: 15000, ReputationRequired: 200, RevenuePerCustomer: 8, MaxCustomers: 50, PowerRequired: 60, Description: "Virtual private servers for customers"},
 	{Name: "S3-Compatible Storage", Type: "storage", MinTier: models.TierRack24U, DeployCost: 12000, ReputationRequired: 150, RevenuePerCustomer: 5, MaxCustomers: 100, PowerRequired: 50, Description: "Object storage for customers"},
 

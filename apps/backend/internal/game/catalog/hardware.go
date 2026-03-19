@@ -24,6 +24,7 @@ var Hardware = []HardwareTemplate{
 	{Name: "HP ProDesk Mini", Type: "mini_pc", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 45, ComputePerTick: 8, Cost: 400},
 	{Name: "Lenovo ThinkCentre", Type: "desktop", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 80, ComputePerTick: 12, Cost: 600},
 	{Name: "Synology NAS", Type: "nas", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 40, ComputePerTick: 3, Cost: 500},
+	{Name: "APC Back-UPS 600VA", Type: "ups", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 0, ComputePerTick: 0, Cost: 300},
 
 	// 12U Rack tier
 	{Name: "Dell PowerEdge R620", Type: "server", MinTier: models.TierRack12U, RackUnitsUsed: intPtr(1), PowerDraw: 200, ComputePerTick: 25, Cost: 1500},

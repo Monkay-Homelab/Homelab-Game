@@ -27,7 +27,7 @@ func Setup(authHandler *handlers.AuthHandler, gameHandler *handlers.GameHandler,
 
 	// Game routes (authenticated, rate limited per user)
 	authMw := middleware.Auth(jwtSecret)
-	gameRateLimit := middleware.RateLimitByUser(300) // 300 actions per minute per user (5/sec)
+	gameRateLimit := middleware.RateLimitByUser(600) // 600 actions per minute per user (10/sec)
 	mux.Handle("GET /api/game/state", authMw(http.HandlerFunc(gameHandler.GetState)))
 	mux.Handle("POST /api/game/action", authMw(gameRateLimit(http.HandlerFunc(gameHandler.PerformAction))))
 

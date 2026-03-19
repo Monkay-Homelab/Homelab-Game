@@ -56,6 +56,13 @@ var coffeeTableEvents = []GameEvent{
 		Tier: "coffee_table", Severity: "moderate",
 		Effect: &EventEffect{ComputeLoss: 50},
 	},
+	{
+		Type: "power_flicker", Name: "Power Flickered!",
+		Description: "The lights flickered and your server rebooted.",
+		Tier: "coffee_table", Severity: "minor",
+		Effect:     &EventEffect{Throttle: 0, ThrottleTicks: 2},
+		Mitigation: &EventMitigation{HardwareType: "ups", Description: "UPS battery keeps it running"},
+	},
 }
 
 // Closet Floor Events
@@ -80,6 +87,13 @@ var closetFloorEvents = []GameEvent{
 		Tier: "closet_floor", Severity: "minor",
 		Effect:     &EventEffect{Throttle: 0.75, ThrottleTicks: 8},
 		Mitigation: &EventMitigation{UpgradeName: "Cable Organizer", Description: "Labels and velcro ties help"},
+	},
+	{
+		Type: "power_outage_closet", Name: "Power Outage!",
+		Description: "Power went out. Everything in the closet is down.",
+		Tier: "closet_floor", Severity: "major",
+		Effect:     &EventEffect{Throttle: 0, ThrottleTicks: 6, ReputationLoss: 20},
+		Mitigation: &EventMitigation{HardwareType: "ups", Description: "UPS battery keeps servers running"},
 	},
 	{
 		Type: "spouse_aggro", Name: "Electricity Bill Shock!",

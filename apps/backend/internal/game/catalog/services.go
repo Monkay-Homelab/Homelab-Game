@@ -29,7 +29,7 @@ var Services = []ServiceTemplate{
 	{Name: "Gitea", Type: "devtools", MinTier: models.TierRack12U, ComputePerTick: 10, ReputationPerTick: 8, PowerRequired: 20, Cost: 800},
 	{Name: "Grafana + Prometheus", Type: "monitoring", MinTier: models.TierRack12U, ComputePerTick: 8, ReputationPerTick: 10, PowerRequired: 30, Cost: 1000},
 	{Name: "Reverse Proxy", Type: "networking", MinTier: models.TierRack12U, ComputePerTick: 5, ReputationPerTick: 12, PowerRequired: 10, Cost: 500},
-	{Name: "WireGuard VPN", Type: "networking", MinTier: models.TierRack12U, ComputePerTick: 3, ReputationPerTick: 8, PowerRequired: 5, Cost: 400},
+	{Name: "WireGuard VPN", Type: "vpn", MinTier: models.TierRack12U, ComputePerTick: 3, ReputationPerTick: 8, MoneyPerTick: 2, PowerRequired: 5, Cost: 400},
 	{Name: "TrueNAS", Type: "storage", MinTier: models.TierRack12U, ComputePerTick: 12, ReputationPerTick: 10, PowerRequired: 50, Cost: 1500},
 
 	// 24U Rack
