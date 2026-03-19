@@ -25,9 +25,15 @@ const TABS: { id: Tab; label: string; icon: string; color: string }[] = [
 ];
 
 export function App() {
-  const { token, state, error, fetchState, logout } = useGameStore();
+  const { token, state, config, error, fetchConfig, fetchState, logout } = useGameStore();
   const [activeTab, setActiveTab] = useState<Tab>('hardware');
   useWebSocket();
+
+  useEffect(() => {
+    if (token && !config) {
+      fetchConfig();
+    }
+  }, [token, config, fetchConfig]);
 
   useEffect(() => {
     if (token && !state) {
@@ -42,7 +48,7 @@ export function App() {
   }, [token, fetchState]);
 
   if (!token) return <Login />;
-  if (!state) {
+  if (!state || !config) {
     return (
       <div className="h-screen flex items-center justify-center" style={{ background: 'var(--bg-deep)' }}>
         <div className="text-center">
@@ -89,7 +95,7 @@ export function App() {
         {/* Left Sidebar — Click + Progress + Datacenter */}
         <div className="w-72 shrink-0 flex flex-col gap-3 min-h-0">
           <ClickArea tier={state.tier} />
-          <TierProgress tier={state.tier} computeUnits={state.compute_units} />
+          <TierProgress tier={state.tier} computeUnits={state.compute_units} coloCount={state.colo_count} />
         </div>
 
         {/* Right Content — Tabbed */}

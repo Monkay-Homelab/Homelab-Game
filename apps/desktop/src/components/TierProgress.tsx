@@ -1,42 +1,31 @@
 import { useGameStore } from '../stores/gameStore';
+import { useConfig, prestigeScale } from '../hooks/useConfig';
 
-const TIER_ORDER = ['coffee_table', 'closet_floor', 'rack_12u', 'rack_24u', 'rack_36u', 'rack_48u'];
-const TIER_LABELS: Record<string, string> = {
-  coffee_table: 'Coffee Table',
-  closet_floor: 'Closet Floor',
-  rack_12u: '12U Rack',
-  rack_24u: '24U Rack',
-  rack_36u: '36U Rack',
-  rack_48u: '48U Rack',
-};
-const UPGRADE_COSTS: Record<string, number> = {
-  coffee_table: 500,
-  closet_floor: 5000,
-  rack_12u: 25000,
-  rack_24u: 100000,
-  rack_36u: 500000,
-  rack_48u: 0,
-};
-
-export function TierProgress({ tier, computeUnits }: { tier: string; computeUnits: number }) {
+export function TierProgress({ tier, computeUnits, coloCount }: { tier: string; computeUnits: number; coloCount: number }) {
+  const config = useConfig();
   const upgradeTier = useGameStore(s => s.upgradeTier);
-  const currentIdx = TIER_ORDER.indexOf(tier);
-  const isMaxTier = currentIdx >= TIER_ORDER.length - 1;
-  const upgradeCost = UPGRADE_COSTS[tier] || 0;
+
+  const tiers = config.tiers;
+  const currentIdx = tiers.findIndex(t => t.id === tier);
+  const isMaxTier = currentIdx >= tiers.length - 1;
+  const currentTier = tiers[currentIdx];
+  const baseCost = currentTier?.base_upgrade_cost || 0;
+  const scale = prestigeScale(config, coloCount);
+  const upgradeCost = Math.floor(baseCost * scale);
   const canUpgrade = !isMaxTier && computeUnits >= upgradeCost;
-  const nextTier = isMaxTier ? null : TIER_LABELS[TIER_ORDER[currentIdx + 1]];
+  const nextTier = isMaxTier ? null : tiers[currentIdx + 1]?.label;
 
   return (
     <div className="panel p-4">
       <div className="flex justify-between items-center mb-3">
         <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Progression</span>
-        <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{currentIdx + 1}/{TIER_ORDER.length}</span>
+        <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{currentIdx + 1}/{tiers.length}</span>
       </div>
 
       <div className="flex gap-1 mb-3">
-        {TIER_ORDER.map((t, i) => (
+        {tiers.map((t, i) => (
           <div
-            key={t}
+            key={t.id}
             className="flex-1 h-1.5 rounded-full transition-all"
             style={{
               background: i <= currentIdx ? 'var(--accent-green)' : 'var(--border)',

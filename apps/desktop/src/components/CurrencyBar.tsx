@@ -1,19 +1,12 @@
 import type { GameState } from '../api';
 import { useIdleTick } from '../hooks/useIdleTick';
+import { useConfig, tierLabel } from '../hooks/useConfig';
 import { useGameStore } from '../stores/gameStore';
 
-const TIER_LABELS: Record<string, string> = {
-  coffee_table: 'Coffee Table',
-  closet_floor: 'Closet Floor',
-  rack_12u: '12U Rack',
-  rack_24u: '24U Rack',
-  rack_36u: '36U Rack',
-  rack_48u: '48U Rack',
-};
-
 export function CurrencyBar({ state }: { state: GameState }) {
+  const config = useConfig();
   const isRack = state.rack_units !== null;
-  const currencies = useIdleTick(state);
+  const currencies = useIdleTick(state, config);
   const resolveEvent = useGameStore(s => s.resolveEvent);
   const throttled = state.throttled || false;
   const throttleTicks = state.throttle_ticks_remaining || 0;
@@ -21,7 +14,7 @@ export function CurrencyBar({ state }: { state: GameState }) {
   return (
     <div className="panel px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="font-mono text-xs px-2 py-1 rounded font-semibold" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--accent-green)', border: '1px solid rgba(34,197,94,0.2)' }}>
-        {TIER_LABELS[state.tier] || state.tier}
+        {tierLabel(config, state.tier)}
       </div>
 
       <Stat label="CU" value={formatNumber(Math.floor(currencies.computeUnits))} rate={currencies.computePerSecond > 0 ? `+${formatNumber(currencies.computePerSecond)}/s` : undefined} color="var(--accent-amber)" />
@@ -36,7 +29,7 @@ export function CurrencyBar({ state }: { state: GameState }) {
       {isRack && (() => {
         const shelves = (state.hardware || []).filter(h => h.type === 'shelf').length;
         if (shelves === 0) return null;
-        const totalSlots = shelves * 4;
+        const totalSlots = shelves * config.gameplay.shelf_slots;
         const usedSlots = (state.hardware || []).filter(h => h.rack_units_used === null && h.slots_used > 0).reduce((s, h) => s + h.slots_used, 0);
         return <Stat label="SHELF" value={`${usedSlots}/${totalSlots}`} color="var(--accent-cyan)" />;
       })()}
@@ -49,7 +42,7 @@ export function CurrencyBar({ state }: { state: GameState }) {
           className="btn px-3 py-1 text-xs animate-gentle-pulse"
           style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.3)' }}
         >
-          THROTTLED ({throttleTicks}) — Fix {throttleTicks * 100} CU
+          THROTTLED ({throttleTicks}) — Fix {throttleTicks * config.gameplay.throttle_resolve_cost_per_tick} CU
         </button>
       )}
 

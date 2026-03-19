@@ -1,16 +1,9 @@
 import { useState } from 'react';
 import { useGameStore } from '../stores/gameStore';
-
-const TIER_JOBS: Record<string, string[]> = {
-  coffee_table: ['Compiling a script...', 'Running apt update...', 'Pinging localhost...', 'Downloading ISO...'],
-  closet_floor: ['Transcoding video...', 'Building Docker image...', 'Running backup...', 'Indexing media library...'],
-  rack_12u: ['Deploying containers...', 'Running Ansible playbook...', 'Syncing NAS...', 'Processing logs...'],
-  rack_24u: ['CI/CD pipeline running...', 'Swarm service scaling...', 'Mail queue processing...', 'Camera feed analyzing...'],
-  rack_36u: ['K8s pod scheduling...', 'ELK ingesting logs...', 'DB cluster rebalancing...', 'DNS zone transfer...'],
-  rack_48u: ['Training ML model...', 'CDN cache warming...', 'Federation sync...', 'Terraform applying...'],
-};
+import { useConfig, getTier } from '../hooks/useConfig';
 
 export function ClickArea({ tier }: { tier: string }) {
+  const config = useConfig();
   const runJob = useGameStore(s => s.runJob);
   const [lastJob, setLastJob] = useState('Ready');
   const [clickCount, setClickCount] = useState(0);
@@ -18,7 +11,8 @@ export function ClickArea({ tier }: { tier: string }) {
 
   const handleClick = () => {
     runJob();
-    const jobs = TIER_JOBS[tier] || TIER_JOBS.coffee_table;
+    const tierCfg = getTier(config, tier);
+    const jobs = tierCfg?.jobs || ['Running job...'];
     setLastJob(jobs[Math.floor(Math.random() * jobs.length)]);
     setClickCount(c => c + 1);
     setIsActive(true);

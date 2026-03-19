@@ -18,11 +18,11 @@ func intPtr(i int) *int { return &i }
 var Hardware = []HardwareTemplate{
 	// Coffee Table tier
 	{Name: "Raspberry Pi 4", Type: "sbc", MinTier: models.TierCoffeeTable, SlotsUsed: 1, PowerDraw: 15, ComputePerTick: 1, Cost: 50},
-	{Name: "Used Dell Optiplex", Type: "desktop", MinTier: models.TierCoffeeTable, SlotsUsed: 1, PowerDraw: 65, ComputePerTick: 5, Cost: 200},
+	{Name: "N100 Mini PC", Type: "mini_pc", MinTier: models.TierCoffeeTable, SlotsUsed: 1, PowerDraw: 25, ComputePerTick: 6, Cost: 200},
 
 	// Closet Floor tier
-	{Name: "HP ProDesk Mini", Type: "mini_pc", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 45, ComputePerTick: 8, Cost: 400},
-	{Name: "Lenovo ThinkCentre", Type: "desktop", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 80, ComputePerTick: 12, Cost: 600},
+	{Name: "HP ProDesk Mini", Type: "mini_pc", MinTier: models.TierClosetFloor, SlotsUsed: 2, PowerDraw: 45, ComputePerTick: 8, Cost: 400},
+	{Name: "Lenovo ThinkCentre", Type: "desktop", MinTier: models.TierClosetFloor, SlotsUsed: 2, PowerDraw: 80, ComputePerTick: 12, Cost: 600},
 	{Name: "Synology NAS", Type: "nas", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 40, ComputePerTick: 3, Cost: 500},
 	{Name: "APC Back-UPS 600VA", Type: "ups", MinTier: models.TierClosetFloor, SlotsUsed: 1, PowerDraw: 0, ComputePerTick: 0, Cost: 300},
 

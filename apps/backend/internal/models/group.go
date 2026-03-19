@@ -8,6 +8,7 @@ type Group struct {
 	FounderID       string    `json:"founder_id"`
 	MinContribution int64     `json:"min_contribution"`
 	ProfitSplit     float64   `json:"profit_split"`
+	MemberCount     int       `json:"member_count,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 

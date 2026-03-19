@@ -190,7 +190,83 @@ export interface LeaderboardData {
   entries: { id: string; user_id: string; username: string; category: string; score: number; rank: number }[];
 }
 
+export interface GameConfig {
+  tiers: TierConfig[];
+  hardware_bonuses: HardwareBonusConfig;
+  prestige: PrestigeConfig;
+  saas_unlock: SaasUnlockConfig;
+  datacenter: DatacenterConfig;
+  gameplay: GameplayConfig;
+  leaderboard: LeaderboardConfig;
+  group: GroupConfig;
+}
+
+export interface TierConfig {
+  id: string;
+  label: string;
+  rank: number;
+  base_upgrade_cost: number;
+  job_reward: number;
+  power_limit: number;
+  cooling_bonus: number;
+  jobs: string[];
+}
+
+export interface HardwareBonusConfig {
+  ups_compute: Record<string, number>;
+  network_income: Record<string, number>;
+  storage_rep: Record<string, number>;
+  patch_panel_bonus: number;
+}
+
+export interface PrestigeConfig {
+  linear_cap: number;
+  linear_increment: number;
+  base: number;
+  exponential_base: number;
+}
+
+export interface SaasUnlockConfig {
+  base_cost: number;
+  reputation_required: number;
+}
+
+export interface DatacenterConfig {
+  build_money_cost: number;
+  build_compute_cost: number;
+  upgrade_money_base: number;
+  upgrade_compute_base: number;
+  min_colo_count: number;
+  max_level: number;
+  income_multiplier_step: number;
+  tier_names: Record<number, string>;
+  level_names: Record<number, string>;
+}
+
+export interface GameplayConfig {
+  shelf_slots: number;
+  throttle_resolve_cost_per_tick: number;
+  heat_penalty: number;
+  knowledge_boost_divisor: number;
+  colo_rack_decay: number;
+  sell_refund_percent: number;
+  max_colo_count: number;
+  base_cooling: number;
+}
+
+export interface LeaderboardConfig {
+  categories: { id: string; label: string }[];
+}
+
+export interface GroupConfig {
+  bonus_per_member: number;
+  max_bonus: number;
+  description: string;
+}
+
 export const api = {
+  getConfig: () => request<GameConfig>('/api/game/config'),
+
   register: (email: string, password: string, displayName: string) =>
     request<AuthResponse>('/api/auth/register', {
       method: 'POST',
@@ -217,12 +293,9 @@ export const api = {
   createGroup: (name: string) => request<GroupInfo>('/api/social/group/create', { method: 'POST', body: JSON.stringify({ name }) }),
   joinGroup: (name: string) => request<GroupInfo>('/api/social/group/join', { method: 'POST', body: JSON.stringify({ name }) }),
   leaveGroup: () => request<{ ok: boolean }>('/api/social/group/leave', { method: 'POST' }),
-  promoteMemeber: (userId: string) => request<any>('/api/social/group/promote', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
-  kickMember: (userId: string) => request<any>('/api/social/group/kick', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
-  getLeaderboard: (category: string) => {
-    const allowed = ['compute', 'reputation', 'services', 'colo_count', 'prestige', 'money', 'group'];
-    const safe = allowed.includes(category) ? category : 'compute';
-    return request<LeaderboardData>(`/api/social/leaderboard?category=${encodeURIComponent(safe)}`);
-  },
+  promoteMember: (userId: string) => request<{ members: GroupInfo['members'] }>('/api/social/group/promote', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
+  kickMember: (userId: string) => request<{ members: GroupInfo['members'] }>('/api/social/group/kick', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
+  getLeaderboard: (category: string) =>
+    request<LeaderboardData>(`/api/social/leaderboard?category=${encodeURIComponent(category)}`),
   updateLeaderboard: () => request<{ ok: boolean }>('/api/social/leaderboard/update', { method: 'POST' }),
 };

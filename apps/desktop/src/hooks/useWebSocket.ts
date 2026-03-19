@@ -8,7 +8,7 @@ const WS_URL = (import.meta.env.VITE_API_URL || 'https://api.homelab.living')
 export function useWebSocket() {
   const token = useGameStore(s => s.token);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mountedRef = useRef(true);
 
   useEffect(() => {

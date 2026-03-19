@@ -1,7 +1,9 @@
 import type { GameState, SaasTemplate, CustomerItem, ExpenseItem } from '../api';
 import { useGameStore } from '../stores/gameStore';
+import { useConfig, prestigeScale } from '../hooks/useConfig';
 
 export function SaasPanel({ state }: { state: GameState }) {
+  const config = useConfig();
   const unlockSaas = useGameStore(s => s.unlockSaas);
   const deploySaas = useGameStore(s => s.deploySaas);
 
@@ -10,6 +12,7 @@ export function SaasPanel({ state }: { state: GameState }) {
   const availableSaas: SaasTemplate[] = state.available_saas || [];
   const deployedSaasNames = new Set((state.services || []).filter(s => availableSaas.some(t => t.name === s.name)).map(s => s.name));
   const isRack = state.rack_units !== null;
+  const scale = prestigeScale(config, state.colo_count);
 
   if (!isRack) {
     return (
@@ -20,13 +23,14 @@ export function SaasPanel({ state }: { state: GameState }) {
   }
 
   if (!saasUnlocked) {
-    const canUnlock = state.compute_units >= 10000 && state.reputation >= 100;
+    const unlockCost = Math.floor(config.saas_unlock.base_cost * scale);
+    const canUnlock = state.compute_units >= unlockCost && state.reputation >= config.saas_unlock.reputation_required;
     return (
       <div className="h-full panel p-6 flex flex-col items-center justify-center">
         <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--accent-amber)' }}>Start a SaaS Business</h3>
         <p className="text-sm mb-4 text-center" style={{ color: 'var(--text-secondary)' }}>Sell hosting services to customers for revenue.</p>
         <div className="font-mono text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-          Requires: 10,000 CU + 100 REP
+          Requires: {unlockCost.toLocaleString()} CU + {config.saas_unlock.reputation_required} REP
         </div>
         <button
           onClick={unlockSaas}
@@ -66,14 +70,15 @@ export function SaasPanel({ state }: { state: GameState }) {
               className="btn px-2 py-1 text-xs"
               style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}
             >
-              Buy All
+              Deploy All
             </button>
           )}
         </div>
         <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
           {sortedSaas.map(s => {
             const deployed = deployedSaasNames.has(s.name);
-            const canAfford = state.compute_units >= s.deploy_cost && state.reputation >= s.reputation_required;
+            const scaledCost = Math.floor(s.deploy_cost * scale);
+            const canAfford = state.compute_units >= scaledCost && state.reputation >= s.reputation_required;
             return (
               <div key={s.name} className="panel-card p-3 flex items-center justify-between">
                 <div>
@@ -95,7 +100,7 @@ export function SaasPanel({ state }: { state: GameState }) {
                       border: `1px solid ${canAfford ? 'rgba(245,158,11,0.2)' : 'var(--border)'}`,
                     }}
                   >
-                    {s.deploy_cost.toLocaleString()} CU
+                    {scaledCost.toLocaleString()} CU
                   </button>
                 )}
               </div>

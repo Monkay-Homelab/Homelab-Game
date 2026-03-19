@@ -47,6 +47,13 @@ func (q *ServiceQueries) GetByGameStateID(ctx context.Context, gameStateID strin
 	return services, nil
 }
 
+func (q *ServiceQueries) Update(ctx context.Context, s *models.Service) error {
+	_, err := q.pool.Exec(ctx,
+		`UPDATE services SET money_per_tick = $1 WHERE id = $2`,
+		s.MoneyPerTick, s.ID)
+	return err
+}
+
 func (q *ServiceQueries) DeleteByGameStateID(ctx context.Context, gameStateID string) error {
 	_, err := q.pool.Exec(ctx, `DELETE FROM services WHERE game_state_id = $1`, gameStateID)
 	return err

@@ -116,7 +116,8 @@ var rackEvents = []GameEvent{
 		Type: "drive_failure", Name: "Drive Failure!",
 		Description: "One of your drives just died.",
 		Tier: "rack", Severity: "major",
-		Effect: &EventEffect{ComputeLoss: 500, ReputationLoss: 30},
+		Effect:     &EventEffect{ComputeLoss: 500, ReputationLoss: 30},
+		Mitigation: &EventMitigation{HardwareType: "nas", Description: "RAID/backup storage saves your data"},
 	},
 	{
 		Type: "isp_outage", Name: "ISP Outage",

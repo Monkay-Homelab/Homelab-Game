@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GameState } from '../api';
+import type { GameState, GameConfig } from '../api';
 
 interface InterpolatedCurrencies {
   computeUnits: number;
@@ -8,83 +8,151 @@ interface InterpolatedCurrencies {
   computePerSecond: number;
 }
 
-export function useIdleTick(state: GameState | null): InterpolatedCurrencies {
+export function useIdleTick(state: GameState | null, config: GameConfig | null): InterpolatedCurrencies {
   const [currencies, setCurrencies] = useState<InterpolatedCurrencies>({
     computeUnits: 0,
     reputation: 0,
     money: 0,
     computePerSecond: 0,
   });
-  const lastFrameTime = useRef(Date.now());
   const rafId = useRef<number>(0);
+  const serverBase = useRef({ compute: 0, reputation: 0, money: 0 });
+  const serverTime = useRef(Date.now());
+  const rates = useRef({ compute: 0, reputation: 0, money: 0 });
+  const initialized = useRef(false);
 
-  const rates = useRef({ compute: 0, reputation: 0, money: 0, multiplier: 1 });
-
+  // Update refs when server state arrives — no rAF restart needed
   useEffect(() => {
-    if (!state) return;
+    if (!state || !config) return;
 
-    setCurrencies(prev => ({
-      ...prev,
-      computeUnits: state.compute_units,
+    const hw = config.hardware_bonuses;
+    const gp = config.gameplay;
+
+    // Always trust the server value — no client-side prediction drift
+    serverBase.current = {
+      compute: state.compute_units,
       reputation: state.reputation,
       money: state.money,
-    }));
-    lastFrameTime.current = Date.now();
+    };
+    serverTime.current = Date.now();
 
-    // Recalculate rates from hardware + services + colo racks
-    let computeRate = 0;
-    let repRate = 0;
-    let moneyRate = 0;
+    // === Rate calculation matching server engine exactly ===
+
+    // Hardware compute (with component upgrades) + UPS bonus + network/storage/patch bonuses
+    let hardwareCompute = 0;
+    let upsCompute = 0;
+    let networkBonus = 0;
+    let storageBonus = 0;
+    let patchPanelBonus = 0;
 
     if (state.hardware) {
+      const compUps = state.component_upgrades || [];
       for (const h of state.hardware) {
-        computeRate += h.compute_per_tick;
+        let bonus = 0;
+        for (const cu of compUps) {
+          if (cu.hardware_id === h.id) bonus += cu.compute_bonus;
+        }
+        hardwareCompute += h.compute_per_tick + bonus;
+
+        if (hw.ups_compute[h.name]) upsCompute += hw.ups_compute[h.name];
+        if (hw.network_income[h.name]) networkBonus += hw.network_income[h.name];
+        if (hw.storage_rep[h.name]) storageBonus += hw.storage_rep[h.name];
+        if (h.type === 'patch_panel') patchPanelBonus += hw.patch_panel_bonus;
       }
     }
+    // Network and storage bonuses stack with no cap
+    hardwareCompute += upsCompute;
+
+    // Service compute/rep/money
+    let serviceCompute = 0;
+    let serviceRep = 0;
+    let serviceMoney = 0;
     if (state.services) {
       for (const s of state.services) {
-        computeRate += s.compute_per_tick;
-        repRate += s.reputation_per_tick;
-        moneyRate += s.money_per_tick;
+        serviceCompute += s.compute_per_tick;
+        serviceRep += s.reputation_per_tick;
+        serviceMoney += s.money_per_tick;
       }
     }
+
+    const totalCompute = hardwareCompute + serviceCompute;
+
+    // Multipliers matching server's ProcessIdleProgress (defensive defaults for missing fields)
+    const heatPenalty = state.overheating ? gp.heat_penalty : 1.0;
+    const throttle = state.throttled ? (state.throttle_multiplier || 0) : 1.0;
+    const knowledgeBoost = 1.0 + (state.knowledge_points || 0) / gp.knowledge_boost_divisor;
+    const netMult = 1.0 + networkBonus;
+    const repMult = 1.0 + storageBonus + patchPanelBonus;
+    const coloMult = state.colo_multiplier || 1.0;
+    const idleMult = state.idle_multiplier || 1.0;
+    const baseMultiplier = coloMult * idleMult * heatPenalty * throttle;
+
+    // Base compute rate (hw + svc with all multipliers)
+    const baseComputeRate = totalCompute * baseMultiplier * knowledgeBoost * netMult;
+
+    // Colo rack income — server only applies datacenterIncomeMultiplier, NOT the other multipliers
+    let coloComputeRate = 0;
+    let coloRepRate = 0;
+    let coloMoneyRate = 0;
+    const dcMult = Math.max(state.datacenter_income_multiplier || 0, 1.0);
     if (state.colo_racks) {
-      for (const r of state.colo_racks) {
-        computeRate += r.compute_per_tick;
-        repRate += r.reputation_per_tick;
-        moneyRate += r.money_per_tick;
+      for (let i = 0; i < state.colo_racks.length; i++) {
+        const cr = state.colo_racks[i];
+        const decay = Math.pow(gp.colo_rack_decay, i);
+        coloComputeRate += cr.compute_per_tick * dcMult * decay;
+        coloRepRate += cr.reputation_per_tick * dcMult * decay;
+        coloMoneyRate += cr.money_per_tick * dcMult * decay;
       }
     }
 
-    const multiplier = state.colo_multiplier * state.idle_multiplier *
-      (state.overheating ? 0.5 : 1.0) *
-      (state.throttled ? state.throttle_multiplier : 1.0) *
-      (state.group_bonus > 1 ? state.group_bonus : 1.0);
+    // Group bonus — server applies additively on raw hw+svc compute, NOT multiplicatively
+    let groupComputeRate = 0;
+    if ((state.group_bonus || 0) > 1) {
+      let rawHwCompute = 0;
+      if (state.hardware) {
+        for (const h of state.hardware) {
+          rawHwCompute += h.compute_per_tick;
+        }
+      }
+      groupComputeRate = (rawHwCompute + serviceCompute) * ((state.group_bonus || 1) - 1.0);
+    }
 
-    rates.current = { compute: computeRate, reputation: repRate, money: moneyRate, multiplier };
+    // Total rates
+    const computeRate = baseComputeRate + coloComputeRate + groupComputeRate;
+    const repRate = serviceRep * heatPenalty * throttle * repMult + coloRepRate;
 
-    setCurrencies(prev => ({
-      ...prev,
-      computePerSecond: Math.floor(computeRate * multiplier),
-    }));
-  }, [state]);
+    // Money: service income minus expenses
+    let totalExpenses = 0;
+    if (state.expenses) {
+      for (const e of state.expenses) {
+        totalExpenses += e.cost_per_tick;
+      }
+    }
+    const moneyRate = serviceMoney * heatPenalty * throttle + coloMoneyRate - totalExpenses;
 
+    // Guard against NaN propagation — fall back to 0 if any calculation produced NaN
+    rates.current = {
+      compute: isFinite(computeRate) ? computeRate : 0,
+      reputation: isFinite(repRate) ? repRate : 0,
+      money: isFinite(moneyRate) ? moneyRate : 0,
+    };
+    initialized.current = true;
+  }, [state, config]);
+
+  // Single rAF loop — starts once, never restarts, reads from refs
   useEffect(() => {
-    if (!state) return;
-
     const tick = () => {
-      const now = Date.now();
-      const elapsed = (now - lastFrameTime.current) / 1000;
-      lastFrameTime.current = now;
+      if (initialized.current) {
+        const elapsed = (Date.now() - serverTime.current) / 1000;
+        const r = rates.current;
+        const base = serverBase.current;
 
-      const r = rates.current;
-      if (r.compute > 0 || r.reputation > 0 || r.money > 0) {
-        setCurrencies(prev => ({
-          ...prev,
-          computeUnits: prev.computeUnits + r.compute * elapsed * r.multiplier,
-          reputation: prev.reputation + r.reputation * elapsed,
-          money: prev.money + r.money * elapsed,
-        }));
+        setCurrencies({
+          computeUnits: base.compute + r.compute * elapsed,
+          reputation: base.reputation + r.reputation * elapsed,
+          money: base.money + r.money * elapsed,
+          computePerSecond: Math.floor(r.compute),
+        });
       }
 
       rafId.current = requestAnimationFrame(tick);
@@ -92,7 +160,7 @@ export function useIdleTick(state: GameState | null): InterpolatedCurrencies {
 
     rafId.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId.current);
-  }, [state]);
+  }, []);
 
   return currencies;
 }

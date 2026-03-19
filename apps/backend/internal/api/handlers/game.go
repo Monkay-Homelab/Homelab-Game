@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/homelab-game/backend/internal/api/middleware"
@@ -14,6 +16,36 @@ import (
 	"github.com/homelab-game/backend/internal/game/events"
 	"github.com/homelab-game/backend/internal/models"
 )
+
+// userMutexMap provides per-user locking to prevent race conditions on concurrent actions.
+type userMutexMap struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func newUserMutexMap() *userMutexMap {
+	return &userMutexMap{locks: make(map[string]*sync.Mutex)}
+}
+
+func (m *userMutexMap) Lock(userID string) {
+	m.mu.Lock()
+	l, ok := m.locks[userID]
+	if !ok {
+		l = &sync.Mutex{}
+		m.locks[userID] = l
+	}
+	m.mu.Unlock()
+	l.Lock()
+}
+
+func (m *userMutexMap) Unlock(userID string) {
+	m.mu.Lock()
+	l, ok := m.locks[userID]
+	m.mu.Unlock()
+	if ok {
+		l.Unlock()
+	}
+}
 
 type GameHandler struct {
 	gameState  *queries.GameStateQueries
@@ -27,6 +59,7 @@ type GameHandler struct {
 	groups     *queries.GroupQueries
 	engine     *engine.Engine
 	hub        *ws.Hub
+	userLocks  *userMutexMap
 }
 
 func NewGameHandler(
@@ -42,7 +75,7 @@ func NewGameHandler(
 	eng *engine.Engine,
 	hub *ws.Hub,
 ) *GameHandler {
-	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub}
+	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub, userLocks: newUserMutexMap()}
 }
 
 type fullStateResponse struct {
@@ -118,6 +151,12 @@ func (h *GameHandler) getGroupBonus(ctx context.Context, userID string) (float64
 	return bonus, count
 }
 
+func (h *GameHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	cfg := engine.GetConfig()
+	json.NewEncoder(w).Encode(cfg)
+}
+
 func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
@@ -136,7 +175,13 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	compUps, _ := h.components.GetByGameStateID(r.Context(), gs.ID)
 
 	now := time.Now()
-	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, now)
+	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
+	elapsed := now.Sub(gs.LastTickAt).Seconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, now)
 
 	// Group bonus
 	groupBonus, groupMembers := h.getGroupBonus(r.Context(), userID)
@@ -146,14 +191,11 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	if dcMult < 1.0 {
 		dcMult = 1.0
 	}
-	seconds := now.Sub(gs.LastTickAt).Seconds()
-	if seconds <= 0 {
-		seconds = 5
-	}
-	for _, cr := range colos {
-		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * seconds * dcMult)
-		gs.Reputation += int64(float64(cr.ReputationPerTick) * seconds * dcMult)
-		gs.Money += int64(float64(cr.MoneyPerTick) * seconds * dcMult)
+	for i, cr := range colos {
+		decay := math.Pow(0.9, float64(i))
+		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * elapsed * dcMult * decay)
+		gs.Reputation += int64(float64(cr.ReputationPerTick) * elapsed * dcMult * decay)
+		gs.Money += int64(float64(cr.MoneyPerTick) * elapsed * dcMult * decay)
 	}
 
 	// Apply group bonus to idle compute earned this tick
@@ -166,8 +208,65 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		for _, s := range svcs {
 			idleCompute += int64(s.ComputePerTick)
 		}
-		groupExtra := int64(float64(idleCompute) * seconds * (groupBonus - 1.0))
+		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
+	}
+
+	// Customer growth for SaaS services
+	if gs.SaasUnlocked {
+		customerCountByType := make(map[string]int)
+		for _, c := range custs {
+			customerCountByType[c.ServiceType]++
+		}
+
+		for _, s := range svcs {
+			saasTemplate := catalog.GetSaasServiceByName(s.Name)
+			if saasTemplate == nil {
+				continue
+			}
+
+			currentCount := customerCountByType[saasTemplate.Type]
+			if currentCount >= saasTemplate.MaxCustomers {
+				continue
+			}
+
+			// Tiered growth: interval = 60 / (1 + currentCustomers * 0.1) seconds
+			interval := 60.0 / (1.0 + float64(currentCount)*0.1)
+			newCount := int(elapsed / interval)
+			if newCount < 1 {
+				continue
+			}
+			if currentCount+newCount > saasTemplate.MaxCustomers {
+				newCount = saasTemplate.MaxCustomers - currentCount
+			}
+
+			for j := 0; j < newCount; j++ {
+				firstName := catalog.CustomerFirstNames[(gs.TotalCustomers+j)%len(catalog.CustomerFirstNames)]
+				lastName := catalog.CustomerLastNames[(gs.TotalCustomers+j)%len(catalog.CustomerLastNames)]
+				newCust := models.Customer{
+					GameStateID:    gs.ID,
+					Name:           firstName + " " + lastName,
+					ServiceType:    saasTemplate.Type,
+					MonthlyRevenue: saasTemplate.RevenuePerCustomer,
+					Satisfaction:   100,
+				}
+				if err := h.customers.Create(r.Context(), &newCust); err == nil {
+					custs = append(custs, newCust)
+					customerCountByType[saasTemplate.Type]++
+				}
+			}
+			gs.TotalCustomers += newCount
+
+			// Update the service's MoneyPerTick to reflect total customer revenue
+			newTotal := int64(customerCountByType[saasTemplate.Type]) * saasTemplate.RevenuePerCustomer
+			for i := range svcs {
+				if svcs[i].ID == s.ID {
+					svcs[i].MoneyPerTick = newTotal
+					h.services.Update(r.Context(), &svcs[i])
+					break
+				}
+			}
+		}
 	}
 
 	if err := h.gameState.Update(r.Context(), gs); err != nil {
@@ -197,6 +296,10 @@ type actionRequest struct {
 func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
+	// Lock per-user to prevent race conditions on concurrent actions
+	h.userLocks.Lock(userID)
+	defer h.userLocks.Unlock(userID)
+
 	var req actionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -218,7 +321,13 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	compUps, _ := h.components.GetByGameStateID(r.Context(), gs.ID)
 
 	now := time.Now()
-	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, now)
+	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
+	elapsed := now.Sub(gs.LastTickAt).Seconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, now)
 
 	// Group bonus
 	groupBonus, groupMembers := h.getGroupBonus(r.Context(), userID)
@@ -228,14 +337,11 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	if dcMult < 1.0 {
 		dcMult = 1.0
 	}
-	seconds := now.Sub(gs.LastTickAt).Seconds()
-	if seconds <= 0 {
-		seconds = 5
-	}
-	for _, cr := range colos {
-		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * seconds * dcMult)
-		gs.Reputation += int64(float64(cr.ReputationPerTick) * seconds * dcMult)
-		gs.Money += int64(float64(cr.MoneyPerTick) * seconds * dcMult)
+	for i, cr := range colos {
+		decay := math.Pow(0.9, float64(i))
+		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * elapsed * dcMult * decay)
+		gs.Reputation += int64(float64(cr.ReputationPerTick) * elapsed * dcMult * decay)
+		gs.Money += int64(float64(cr.MoneyPerTick) * elapsed * dcMult * decay)
 	}
 
 	// Apply group bonus
@@ -247,8 +353,65 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		for _, s := range svcs {
 			idleCompute += int64(s.ComputePerTick)
 		}
-		groupExtra := int64(float64(idleCompute) * seconds * (groupBonus - 1.0))
+		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
+	}
+
+	// Customer growth for SaaS services
+	if gs.SaasUnlocked {
+		customerCountByType := make(map[string]int)
+		for _, c := range custs {
+			customerCountByType[c.ServiceType]++
+		}
+
+		for _, s := range svcs {
+			saasTemplate := catalog.GetSaasServiceByName(s.Name)
+			if saasTemplate == nil {
+				continue
+			}
+
+			currentCount := customerCountByType[saasTemplate.Type]
+			if currentCount >= saasTemplate.MaxCustomers {
+				continue
+			}
+
+			// Tiered growth: interval = 60 / (1 + currentCustomers * 0.1) seconds
+			interval := 60.0 / (1.0 + float64(currentCount)*0.1)
+			newCount := int(elapsed / interval)
+			if newCount < 1 {
+				continue
+			}
+			if currentCount+newCount > saasTemplate.MaxCustomers {
+				newCount = saasTemplate.MaxCustomers - currentCount
+			}
+
+			for j := 0; j < newCount; j++ {
+				firstName := catalog.CustomerFirstNames[(gs.TotalCustomers+j)%len(catalog.CustomerFirstNames)]
+				lastName := catalog.CustomerLastNames[(gs.TotalCustomers+j)%len(catalog.CustomerLastNames)]
+				newCust := models.Customer{
+					GameStateID:    gs.ID,
+					Name:           firstName + " " + lastName,
+					ServiceType:    saasTemplate.Type,
+					MonthlyRevenue: saasTemplate.RevenuePerCustomer,
+					Satisfaction:   100,
+				}
+				if err := h.customers.Create(r.Context(), &newCust); err == nil {
+					custs = append(custs, newCust)
+					customerCountByType[saasTemplate.Type]++
+				}
+			}
+			gs.TotalCustomers += newCount
+
+			// Update the service's MoneyPerTick to reflect total customer revenue
+			newTotal := int64(customerCountByType[saasTemplate.Type]) * saasTemplate.RevenuePerCustomer
+			for i := range svcs {
+				if svcs[i].ID == s.ID {
+					svcs[i].MoneyPerTick = newTotal
+					h.services.Update(r.Context(), &svcs[i])
+					break
+				}
+			}
+		}
 	}
 
 	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps)
@@ -311,6 +474,42 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		if err := h.components.Upsert(r.Context(), result.ComponentUpgrade); err != nil {
 			http.Error(w, `{"error":"failed to save component upgrade"}`, http.StatusInternalServerError)
 			return
+		}
+	}
+	// Bulk persistence
+	for i := range result.NewServices {
+		if err := h.services.Create(r.Context(), &result.NewServices[i]); err != nil {
+			continue
+		}
+		svcs = append(svcs, result.NewServices[i])
+	}
+	for i := range result.NewUpgrades {
+		if err := h.upgrades.Create(r.Context(), &result.NewUpgrades[i]); err != nil {
+			continue
+		}
+		ups = append(ups, result.NewUpgrades[i])
+	}
+	for i := range result.NewCustomers {
+		if err := h.customers.Create(r.Context(), &result.NewCustomers[i]); err != nil {
+			continue
+		}
+		custs = append(custs, result.NewCustomers[i])
+	}
+	for i := range result.ComponentUpgrades {
+		if err := h.components.Upsert(r.Context(), &result.ComponentUpgrades[i]); err != nil {
+			continue
+		}
+		// Replace existing entry in compUps rather than appending duplicates
+		found := false
+		for j := range compUps {
+			if compUps[j].HardwareID == result.ComponentUpgrades[i].HardwareID && compUps[j].Component == result.ComponentUpgrades[i].Component {
+				compUps[j] = result.ComponentUpgrades[i]
+				found = true
+				break
+			}
+		}
+		if !found {
+			compUps = append(compUps, result.ComponentUpgrades[i])
 		}
 	}
 

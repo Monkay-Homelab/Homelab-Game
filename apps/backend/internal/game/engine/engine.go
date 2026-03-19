@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/homelab-game/backend/internal/game/catalog"
@@ -18,30 +19,61 @@ func New() *Engine {
 
 // ProcessIdleProgress calculates resources earned since the last tick.
 // Returns any events that triggered during the elapsed time.
-func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, expenses []models.Expense, customers []models.Customer, now time.Time) []*events.GameEvent {
+func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, expenses []models.Expense, customers []models.Customer, compUpgrades []models.ComponentUpgrade, now time.Time) []*events.GameEvent {
 	elapsed := now.Sub(gs.LastTickAt)
-	if elapsed <= 0 {
-		return nil
-	}
-
 	seconds := elapsed.Seconds()
 
-	// Decay throttle over time
-	if gs.ThrottleTicksRemaining > 0 {
-		gs.ThrottleTicksRemaining--
-		if gs.ThrottleTicksRemaining <= 0 {
-			gs.ThrottleMultiplier = 1.0
-			gs.ThrottleTicksRemaining = 0
+	// === RECALCULATIONS (always run, regardless of elapsed time) ===
+
+	// Compute from hardware (including component upgrade bonuses) and recalculate heat
+	// Also calculate bonuses from network, storage, power, and patch panel hardware
+	var hardwareCompute int64
+	var totalHeat int
+	var networkBonus float64  // idle income multiplier from switches
+	var storageBonus float64  // reputation multiplier from NAS
+	var upsCompute int64      // flat compute bonus from UPS
+	var patchPanelBonus float64 // reputation multiplier from patch panels
+
+	for _, h := range hardware {
+		compute := h.ComputePerTick
+		powerDraw := h.PowerDraw
+		// Apply component upgrade bonuses for this hardware
+		for _, cu := range compUpgrades {
+			if cu.HardwareID == h.ID {
+				compute += int64(cu.ComputeBonus)
+				powerDraw -= cu.PowerReduction
+			}
+		}
+		if powerDraw < 0 {
+			powerDraw = 0
+		}
+		hardwareCompute += compute
+		totalHeat += powerDraw
+
+		// Network hardware: idle income bonus
+		if bonus, ok := NetworkIncomeBonus[h.Name]; ok {
+			networkBonus += bonus
+		}
+
+		// Storage hardware: reputation bonus
+		if bonus, ok := StorageRepBonus[h.Name]; ok {
+			storageBonus += bonus
+		}
+
+		// UPS hardware: flat compute bonus
+		if bonus, ok := UpsComputeBonus[h.Name]; ok {
+			upsCompute += bonus
+		}
+
+		// Patch panel: reputation bonus
+		if h.Type == "patch_panel" {
+			patchPanelBonus += PatchPanelBonusValue
 		}
 	}
 
-	// Compute from hardware and recalculate heat from actual power draw
-	var hardwareCompute int64
-	var totalHeat int
-	for _, h := range hardware {
-		hardwareCompute += h.ComputePerTick
-		totalHeat += h.PowerDraw
-	}
+	// Network and storage bonuses stack additively with no cap
+
+	hardwareCompute += upsCompute
 
 	// Compute and reputation from services
 	var serviceCompute, serviceRep, serviceMoney int64
@@ -51,7 +83,17 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 		serviceMoney += s.MoneyPerTick
 	}
 
-	// Heat = total power draw (recalculated every tick to stay accurate)
+	// Recalculate actual power draw from hardware (with component reductions) + services
+	// Services don't have component upgrades so we add their power from gs.PowerWatts - totalHardwareBasePower + totalHeat
+	var hardwareBasePower int
+	for _, h := range hardware {
+		hardwareBasePower += h.PowerDraw
+	}
+	servicePower := gs.PowerWatts - hardwareBasePower
+	if servicePower < 0 {
+		servicePower = 0
+	}
+	gs.PowerWatts = totalHeat + servicePower
 	gs.HeatGenerated = gs.PowerWatts
 
 	// Recalculate cooling capacity from base + tier + owned cooling upgrades
@@ -67,7 +109,35 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	}
 	gs.CoolingCapacity = baseCooling + tierBonus + upgradeCooling
 
+	// Recalculate power limit from tier (ensures retroactive changes apply)
+	gs.PowerLimit = tierPowerLimit(gs.Tier)
+
+	// Recalculate used slots from actual hardware (keeps slot count accurate)
+	if isRackTier(gs.Tier) {
+		usedSlots := 0
+		for _, h := range hardware {
+			if h.RackUnitsUsed == nil && h.SlotsUsed > 0 {
+				usedSlots += h.SlotsUsed
+			}
+		}
+		gs.UsedSlots = usedSlots
+	}
+
 	totalCompute := hardwareCompute + serviceCompute
+
+	// === INCOME & EVENTS (only run when time has elapsed) ===
+	if elapsed <= 0 {
+		return nil
+	}
+
+	// Decay throttle over time
+	if gs.ThrottleTicksRemaining > 0 {
+		gs.ThrottleTicksRemaining--
+		if gs.ThrottleTicksRemaining <= 0 {
+			gs.ThrottleMultiplier = 1.0
+			gs.ThrottleTicksRemaining = 0
+		}
+	}
 
 	// Overheat penalty: if heat exceeds cooling, throttle by 50%
 	heatPenalty := 1.0
@@ -83,8 +153,14 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	// Knowledge points boost: +1% per knowledge point
 	knowledgeBoost := 1.0 + float64(gs.KnowledgePoints)/100.0
 
-	gs.ComputeUnits += int64(float64(totalCompute) * seconds * totalMultiplier * knowledgeBoost)
-	gs.Reputation += int64(float64(serviceRep) * seconds * heatPenalty * eventThrottle)
+	// Network bonus: switches boost idle compute income
+	netMult := 1.0 + networkBonus
+
+	// Storage + patch panel bonus: boost reputation income
+	repMult := 1.0 + storageBonus + patchPanelBonus
+
+	gs.ComputeUnits += int64(float64(totalCompute) * seconds * totalMultiplier * knowledgeBoost * netMult)
+	gs.Reputation += int64(float64(serviceRep) * seconds * heatPenalty * eventThrottle * repMult)
 	gs.Money += int64(float64(serviceMoney) * seconds * heatPenalty * eventThrottle)
 
 	// Deduct business expenses from money
@@ -141,19 +217,16 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	return triggered
 }
 
-// countShelfSlots returns total shelf capacity and used shelf slots from existing hardware.
-// Each shelf provides 4 slots for small (slot-based) items in a rack.
-func countShelfSlots(hardware []models.Hardware) (total int, used int) {
+// countShelfCapacity returns total shelf slot capacity from owned shelves.
+// Each shelf provides 8 slots for small (slot-based) items in a rack.
+func countShelfCapacity(hardware []models.Hardware) int {
+	total := 0
 	for _, h := range hardware {
 		if h.Type == "shelf" {
-			total += 4
-		}
-		// Slot-based items in a rack are on shelves
-		if h.RackUnitsUsed == nil && h.SlotsUsed > 0 {
-			used += h.SlotsUsed
+			total += 8
 		}
 	}
-	return
+	return total
 }
 
 // ProcessAction validates and applies a player action.
@@ -181,6 +254,14 @@ func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload 
 		return e.upgradeTier(gs)
 	case "colo":
 		return e.prestige(gs, hardware, services)
+	case "bulk_upgrade_components":
+		return e.bulkUpgradeComponents(gs, hardware, compUpgrades)
+	case "bulk_deploy_services":
+		return e.bulkDeployServices(gs, services)
+	case "bulk_buy_upgrades":
+		return e.bulkBuyUpgrades(gs, payload, upgrades)
+	case "bulk_deploy_saas":
+		return e.bulkDeploySaas(gs, services)
 	case "build_datacenter":
 		return e.buildDatacenter(gs)
 	case "upgrade_datacenter":
@@ -192,21 +273,26 @@ func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload 
 
 // ActionResult carries any new or removed DB records that need to be persisted.
 type ActionResult struct {
-	NewHardware      *models.Hardware
-	NewService       *models.Service
-	NewUpgrade       *models.Upgrade
-	NewCustomer      *models.Customer
-	NewExpenses      []models.Expense
-	NewColoRack      *models.ColoRack
-	ComponentUpgrade *models.ComponentUpgrade
-	RemoveHardware   string // hardware ID to delete
-	Prestige         bool   // if true, handler should wipe non-persistent data
+	NewHardware       *models.Hardware
+	NewService        *models.Service
+	NewServices       []models.Service
+	NewUpgrade        *models.Upgrade
+	NewUpgrades       []models.Upgrade
+	NewCustomer       *models.Customer
+	NewCustomers      []models.Customer
+	NewExpenses       []models.Expense
+	NewColoRack       *models.ColoRack
+	ComponentUpgrade  *models.ComponentUpgrade
+	ComponentUpgrades []models.ComponentUpgrade
+	RemoveHardware    string // hardware ID to delete
+	Prestige          bool   // if true, handler should wipe non-persistent data
 }
 
 func (e *Engine) runJob(gs *models.GameState) (*ActionResult, error) {
 	reward := tierJobReward(gs.Tier)
+	// Clicks only get knowledge boost — colo multiplier applies to idle income only
 	knowledgeBoost := 1.0 + float64(gs.KnowledgePoints)/100.0
-	gs.ComputeUnits += int64(float64(reward) * gs.ColoMultiplier * knowledgeBoost)
+	gs.ComputeUnits += int64(float64(reward) * knowledgeBoost)
 	return &ActionResult{}, nil
 }
 
@@ -254,12 +340,12 @@ func (e *Engine) buyHardware(gs *models.GameState, payload json.RawMessage, hard
 			gs.UsedRackUnits = &newUsed
 		} else {
 			// Slot-based item in rack tier — needs a rack shelf
-			shelfTotal, shelfUsed := countShelfSlots(hardware)
-			if shelfTotal == 0 {
+			shelfCapacity := countShelfCapacity(hardware)
+			if shelfCapacity == 0 {
 				return nil, fmt.Errorf("%s requires a Rack Shelf (buy one first)", p.Name)
 			}
-			if shelfUsed+tmpl.SlotsUsed > shelfTotal {
-				return nil, fmt.Errorf("not enough shelf space (%d/%d slots used, need %d)", shelfUsed, shelfTotal, tmpl.SlotsUsed)
+			if gs.UsedSlots+tmpl.SlotsUsed > shelfCapacity {
+				return nil, fmt.Errorf("not enough shelf space (%d/%d slots used, need %d)", gs.UsedSlots, shelfCapacity, tmpl.SlotsUsed)
 			}
 			gs.UsedSlots += tmpl.SlotsUsed
 		}
@@ -309,6 +395,16 @@ func (e *Engine) sellHardware(gs *models.GameState, payload json.RawMessage, har
 	}
 	if found == nil {
 		return nil, fmt.Errorf("hardware not found")
+	}
+
+	// Can't sell a shelf if items are on it
+	if found.Type == "shelf" {
+		shelfCapacity := countShelfCapacity(hardware)
+		// After removing this shelf, would remaining capacity cover used slots?
+		remainingCapacity := shelfCapacity - 8
+		if gs.UsedSlots > remainingCapacity {
+			return nil, fmt.Errorf("cannot sell shelf — %d items still on shelves (remove them first)", gs.UsedSlots)
+		}
 	}
 
 	// Look up original cost from catalog for 60% refund
@@ -381,10 +477,14 @@ func (e *Engine) deployService(gs *models.GameState, payload json.RawMessage) (*
 }
 
 func (e *Engine) upgradeTier(gs *models.GameState) (*ActionResult, error) {
-	next, cost, ok := nextTier(gs.Tier)
+	next, baseCost, ok := nextTier(gs.Tier)
 	if !ok {
 		return nil, fmt.Errorf("already at max tier")
 	}
+
+	// Scale tier costs with prestige count
+	prestigeScale := prestigeCostScale(gs.ColoCount)
+	cost := int64(float64(baseCost) * prestigeScale)
 
 	if gs.ComputeUnits < cost {
 		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", cost, gs.ComputeUnits)
@@ -397,7 +497,7 @@ func (e *Engine) upgradeTier(gs *models.GameState) (*ActionResult, error) {
 	switch next {
 	case models.TierClosetFloor:
 		gs.HardwareSlots = 5
-		gs.PowerLimit = 500
+		gs.PowerLimit = 1250
 		gs.CoolingCapacity += 100
 	case models.TierRack12U:
 		gs.HardwareSlots = 0 // slots no longer used
@@ -405,22 +505,22 @@ func (e *Engine) upgradeTier(gs *models.GameState) (*ActionResult, error) {
 		usedRU := 0
 		gs.RackUnits = &ru
 		gs.UsedRackUnits = &usedRU
-		gs.PowerLimit = 1500
+		gs.PowerLimit = 3750
 		gs.CoolingCapacity += 500
 	case models.TierRack24U:
 		ru := 24
 		gs.RackUnits = &ru
-		gs.PowerLimit = 3000
+		gs.PowerLimit = 7500
 		gs.CoolingCapacity += 1000
 	case models.TierRack36U:
 		ru := 36
 		gs.RackUnits = &ru
-		gs.PowerLimit = 5000
+		gs.PowerLimit = 12500
 		gs.CoolingCapacity += 2000
 	case models.TierRack48U:
 		ru := 48
 		gs.RackUnits = &ru
-		gs.PowerLimit = 8000
+		gs.PowerLimit = 20000
 		gs.CoolingCapacity += 3000
 	}
 
@@ -507,10 +607,11 @@ func (e *Engine) buyUpgrade(gs *models.GameState, payload json.RawMessage, owned
 		if catalog.TierToRank(gs.Tier) < catalog.TierToRank(tmpl.MinTier) {
 			return nil, fmt.Errorf("tier too low for %s", p.Name)
 		}
-		if gs.ComputeUnits < tmpl.Cost {
+		cost := int64(float64(tmpl.Cost) * prestigeCostScale(gs.ColoCount))
+		if gs.ComputeUnits < cost {
 			return nil, fmt.Errorf("not enough compute units")
 		}
-		gs.ComputeUnits -= tmpl.Cost
+		gs.ComputeUnits -= cost
 		gs.IdleMultiplier = mult
 		gs.AutomationTier++
 		return &ActionResult{NewUpgrade: &models.Upgrade{GameStateID: gs.ID, Name: p.Name, Type: "automation", Tier: gs.Tier, Persistent: false}}, nil
@@ -667,7 +768,7 @@ func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, serv
 	gs.ComputeUnits = 0
 	gs.Reputation = 0
 	gs.PowerWatts = 0
-	gs.PowerLimit = 200
+	gs.PowerLimit = 500
 	gs.Money = 0
 	gs.HardwareSlots = 2
 	gs.UsedSlots = 0
@@ -726,7 +827,7 @@ func (e *Engine) unlockSaas(gs *models.GameState) (*ActionResult, error) {
 	if gs.Reputation < 100 {
 		return nil, fmt.Errorf("need at least 100 reputation to unlock SaaS (have %d)", gs.Reputation)
 	}
-	cost := int64(10000)
+	cost := int64(float64(10000) * prestigeCostScale(gs.ColoCount))
 	if gs.ComputeUnits < cost {
 		return nil, fmt.Errorf("not enough compute units (need %d)", cost)
 	}
@@ -766,17 +867,18 @@ func (e *Engine) deploySaas(gs *models.GameState, payload json.RawMessage) (*Act
 		return nil, fmt.Errorf("unknown SaaS service: %s", p.Name)
 	}
 
+	cost := int64(float64(tmpl.DeployCost) * prestigeCostScale(gs.ColoCount))
 	if gs.Reputation < tmpl.ReputationRequired {
 		return nil, fmt.Errorf("need %d reputation (have %d)", tmpl.ReputationRequired, gs.Reputation)
 	}
-	if gs.ComputeUnits < tmpl.DeployCost {
-		return nil, fmt.Errorf("not enough compute units (need %d)", tmpl.DeployCost)
+	if gs.ComputeUnits < cost {
+		return nil, fmt.Errorf("not enough compute units (need %d)", cost)
 	}
 	if gs.PowerWatts+tmpl.PowerRequired > gs.PowerLimit {
 		return nil, fmt.Errorf("not enough power capacity")
 	}
 
-	gs.ComputeUnits -= tmpl.DeployCost
+	gs.ComputeUnits -= cost
 	gs.PowerWatts += tmpl.PowerRequired
 	gs.HeatGenerated += tmpl.PowerRequired
 
@@ -815,7 +917,7 @@ func (e *Engine) buildDatacenter(gs *models.GameState) (*ActionResult, error) {
 		return nil, fmt.Errorf("need at least 5 colocations to build a datacenter (have %d)", gs.ColoCount)
 	}
 
-	moneyCost := int64(1000000)
+	moneyCost := int64(500000)
 	computeCost := int64(5000000)
 
 	if gs.Money < moneyCost {
@@ -844,7 +946,7 @@ func (e *Engine) upgradeDatacenter(gs *models.GameState) (*ActionResult, error) 
 
 	// Cost scales with level
 	level := gs.DatacenterLevel
-	moneyCost := int64(500000) * int64(level+1)
+	moneyCost := int64(250000) * int64(level+1)
 	computeCost := int64(2000000) * int64(level+1)
 
 	if gs.Money < moneyCost {
@@ -863,18 +965,44 @@ func (e *Engine) upgradeDatacenter(gs *models.GameState) (*ActionResult, error) 
 	return &ActionResult{}, nil
 }
 
+func prestigeCostScale(coloCount int) float64 {
+	if coloCount <= 5 {
+		return 1.0 + float64(coloCount)*0.5
+	}
+	return 3.5 * math.Pow(1.5, float64(coloCount-5))
+}
+
+func tierPowerLimit(tier models.Tier) int {
+	switch tier {
+	case models.TierCoffeeTable:
+		return 500
+	case models.TierClosetFloor:
+		return 1250
+	case models.TierRack12U:
+		return 3750
+	case models.TierRack24U:
+		return 7500
+	case models.TierRack36U:
+		return 12500
+	case models.TierRack48U:
+		return 20000
+	default:
+		return 500
+	}
+}
+
 func tierCoolingBonus(tier models.Tier) int {
 	switch tier {
 	case models.TierClosetFloor:
-		return 100
+		return 250
 	case models.TierRack12U:
-		return 600
+		return 1500
 	case models.TierRack24U:
-		return 1600
+		return 4000
 	case models.TierRack36U:
-		return 3600
+		return 9000
 	case models.TierRack48U:
-		return 6600
+		return 16500
 	default:
 		return 0
 	}
@@ -882,6 +1010,259 @@ func tierCoolingBonus(tier models.Tier) int {
 
 func isRackTier(tier models.Tier) bool {
 	return catalog.TierToRank(tier) >= 2
+}
+
+// === BULK ACTIONS ===
+
+func (e *Engine) bulkUpgradeComponents(gs *models.GameState, hardware []models.Hardware, compUpgrades []models.ComponentUpgrade) (*ActionResult, error) {
+	upgradeableTypes := map[string]bool{"server": true, "desktop": true, "sbc": true, "mini_pc": true, "gpu_server": true}
+	components := []string{"cpu", "ram", "storage", "nic"}
+	// Track final state per (hardware_id, component) to avoid duplicate intermediate results
+	type compKey struct {
+		HardwareID string
+		Component  string
+	}
+	resultMap := make(map[compKey]models.ComponentUpgrade)
+
+	upgraded := true
+	for upgraded {
+		upgraded = false
+		for _, h := range hardware {
+			if !upgradeableTypes[h.Type] {
+				continue
+			}
+			for _, comp := range components {
+				info := catalog.GetComponentUpgradeInfo(comp)
+				if info == nil {
+					continue
+				}
+				currentLevel := 0
+				for _, cu := range compUpgrades {
+					if cu.HardwareID == h.ID && cu.Component == comp {
+						currentLevel = cu.Level
+						break
+					}
+				}
+				if currentLevel >= info.MaxLevel {
+					continue
+				}
+				cost := int64(float64(info.BaseCost) * pow(info.CostScale, currentLevel))
+				if gs.ComputeUnits < cost {
+					continue
+				}
+				gs.ComputeUnits -= cost
+				newLevel := currentLevel + 1
+				cu := models.ComponentUpgrade{
+					HardwareID:     h.ID,
+					Component:      comp,
+					Level:          newLevel,
+					ComputeBonus:   info.ComputeAdd * newLevel,
+					PowerReduction: info.PowerReduce * newLevel,
+				}
+				// Update in-memory list
+				found := false
+				for i, existing := range compUpgrades {
+					if existing.HardwareID == h.ID && existing.Component == comp {
+						compUpgrades[i] = cu
+						found = true
+						break
+					}
+				}
+				if !found {
+					compUpgrades = append(compUpgrades, cu)
+				}
+				// Only keep the final level per component (overwrites intermediate levels)
+				resultMap[compKey{h.ID, comp}] = cu
+				upgraded = true
+			}
+		}
+	}
+
+	result := make([]models.ComponentUpgrade, 0, len(resultMap))
+	for _, cu := range resultMap {
+		result = append(result, cu)
+	}
+
+	return &ActionResult{ComponentUpgrades: result}, nil
+}
+
+func (e *Engine) bulkDeployServices(gs *models.GameState, deployed []models.Service) (*ActionResult, error) {
+	deployedNames := make(map[string]bool)
+	for _, s := range deployed {
+		deployedNames[s.Name] = true
+	}
+
+	available := catalog.GetAvailableServices(gs.Tier)
+	var newServices []models.Service
+
+	for _, tmpl := range available {
+		if deployedNames[tmpl.Name] {
+			continue
+		}
+		if gs.ComputeUnits < tmpl.Cost {
+			continue
+		}
+		if gs.PowerWatts+tmpl.PowerRequired > gs.PowerLimit {
+			continue
+		}
+		gs.ComputeUnits -= tmpl.Cost
+		gs.PowerWatts += tmpl.PowerRequired
+		svc := models.Service{
+			GameStateID:       gs.ID,
+			Name:              tmpl.Name,
+			Type:              tmpl.Type,
+			Tier:              gs.Tier,
+			ComputePerTick:    tmpl.ComputePerTick,
+			ReputationPerTick: tmpl.ReputationPerTick,
+			MoneyPerTick:      tmpl.MoneyPerTick,
+		}
+		newServices = append(newServices, svc)
+		deployedNames[tmpl.Name] = true
+	}
+
+	return &ActionResult{NewServices: newServices}, nil
+}
+
+type bulkBuyUpgradesPayload struct {
+	Type string `json:"type"` // optional: "cooling", "networking", "automation", "knowledge"
+}
+
+func (e *Engine) bulkBuyUpgrades(gs *models.GameState, payload json.RawMessage, owned []models.Upgrade) (*ActionResult, error) {
+	var p bulkBuyUpgradesPayload
+	json.Unmarshal(payload, &p)
+
+	ownedNames := make(map[string]bool)
+	for _, u := range owned {
+		ownedNames[u.Name] = true
+	}
+
+	var newUpgrades []models.Upgrade
+	allUpgrades := catalog.GetAvailableUpgrades(gs.Tier)
+
+	for _, tmpl := range allUpgrades {
+		if p.Type != "" && tmpl.Type != p.Type {
+			continue
+		}
+		if ownedNames[tmpl.Name] {
+			continue
+		}
+		if catalog.TierToRank(gs.Tier) < catalog.TierToRank(tmpl.MinTier) {
+			continue
+		}
+
+		// Check cost based on type
+		// For automation upgrades, apply prestige scaling
+		actualCost := tmpl.Cost
+		if tmpl.Type == "automation" {
+			actualCost = int64(float64(tmpl.Cost) * prestigeCostScale(gs.ColoCount))
+		}
+		if tmpl.CostType == "money" {
+			if gs.Money < tmpl.Cost {
+				continue
+			}
+			gs.Money -= tmpl.Cost
+		} else {
+			if gs.ComputeUnits < actualCost {
+				continue
+			}
+			gs.ComputeUnits -= actualCost
+		}
+
+		// Apply effects
+		switch tmpl.Type {
+		case "cooling":
+			if val, ok := catalog.CoolingValues[tmpl.Name]; ok {
+				gs.CoolingCapacity += val
+			}
+		case "networking":
+			if val, ok := catalog.NetworkTierValues[tmpl.Name]; ok {
+				if val > gs.NetworkTier {
+					gs.NetworkTier = val
+				}
+			}
+		case "automation":
+			if mult, ok := catalog.AutomationMultipliers[tmpl.Name]; ok {
+				gs.IdleMultiplier = mult
+				gs.AutomationTier++
+			}
+		case "knowledge":
+			if pts, ok := catalog.KnowledgePointValues[tmpl.Name]; ok {
+				gs.KnowledgePoints += pts
+			}
+		}
+
+		u := models.Upgrade{
+			GameStateID: gs.ID,
+			Name:        tmpl.Name,
+			Type:        tmpl.Type,
+			Tier:        gs.Tier,
+			Persistent:  tmpl.Persistent,
+		}
+		newUpgrades = append(newUpgrades, u)
+		ownedNames[tmpl.Name] = true
+	}
+
+	return &ActionResult{NewUpgrades: newUpgrades}, nil
+}
+
+func (e *Engine) bulkDeploySaas(gs *models.GameState, deployed []models.Service) (*ActionResult, error) {
+	if !gs.SaasUnlocked {
+		return &ActionResult{}, nil
+	}
+
+	deployedNames := make(map[string]bool)
+	for _, s := range deployed {
+		deployedNames[s.Name] = true
+	}
+
+	available := catalog.GetAvailableSaasServices(gs.Tier)
+	var newServices []models.Service
+	var newCustomers []models.Customer
+
+	for _, tmpl := range available {
+		if deployedNames[tmpl.Name] {
+			continue
+		}
+		cost := int64(float64(tmpl.DeployCost) * prestigeCostScale(gs.ColoCount))
+		if gs.ComputeUnits < cost {
+			continue
+		}
+		if gs.Reputation < tmpl.ReputationRequired {
+			continue
+		}
+		if gs.PowerWatts+tmpl.PowerRequired > gs.PowerLimit {
+			continue
+		}
+
+		gs.ComputeUnits -= cost
+		gs.PowerWatts += tmpl.PowerRequired
+
+		svc := models.Service{
+			GameStateID:       gs.ID,
+			Name:              tmpl.Name,
+			Type:              tmpl.Type,
+			Tier:              gs.Tier,
+			ComputePerTick:    0,
+			ReputationPerTick: 5,
+			MoneyPerTick:      tmpl.RevenuePerCustomer,
+		}
+		newServices = append(newServices, svc)
+
+		firstName := catalog.CustomerFirstNames[gs.TotalCustomers%len(catalog.CustomerFirstNames)]
+		lastName := catalog.CustomerLastNames[gs.TotalCustomers%len(catalog.CustomerLastNames)]
+		customer := models.Customer{
+			GameStateID:    gs.ID,
+			Name:           firstName + " " + lastName,
+			ServiceType:    tmpl.Type,
+			MonthlyRevenue: tmpl.RevenuePerCustomer,
+			Satisfaction:   100,
+		}
+		newCustomers = append(newCustomers, customer)
+		gs.TotalCustomers++
+		deployedNames[tmpl.Name] = true
+	}
+
+	return &ActionResult{NewServices: newServices, NewCustomers: newCustomers}, nil
 }
 
 func tierJobReward(tier models.Tier) int64 {

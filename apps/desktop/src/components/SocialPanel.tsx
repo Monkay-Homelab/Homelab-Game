@@ -1,21 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api, type GroupInfo, type LeaderboardData } from '../api';
+import { useConfig } from '../hooks/useConfig';
 
-const LB_CATEGORIES = [
-  { id: 'compute', label: 'Compute' },
-  { id: 'reputation', label: 'Reputation' },
-  { id: 'services', label: 'Services' },
-  { id: 'colo_count', label: 'Prestiges' },
-  { id: 'money', label: 'Money' },
-  { id: 'group', label: 'Groups' },
-];
+type GroupListItem = NonNullable<GroupInfo['group']>;
 
 export function SocialPanel() {
+  const config = useConfig();
+  const LB_CATEGORIES = config.leaderboard.categories;
   const [group, setGroup] = useState<GroupInfo | null>(null);
+  const [allGroups, setAllGroups] = useState<GroupListItem[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null);
   const [lbCategory, setLbCategory] = useState('compute');
   const [groupName, setGroupName] = useState('');
-  const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'group' | 'leaderboard'>('group');
 
@@ -23,6 +19,11 @@ export function SocialPanel() {
     try {
       const data = await api.getMyGroup();
       setGroup(data);
+      if (!data?.group) {
+        // Load available groups if not in one
+        const list = await api.listGroups();
+        setAllGroups((list.groups || []).filter((g): g is GroupListItem => g !== null));
+      }
     } catch { /* no group */ }
   };
 
@@ -42,17 +43,6 @@ export function SocialPanel() {
       const data = await api.createGroup(groupName);
       setGroup(data);
       setGroupName('');
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  const handleJoin = async () => {
-    setError('');
-    try {
-      const data = await api.joinGroup(joinName);
-      setGroup(data);
-      setJoinName('');
     } catch (e) {
       setError((e as Error).message);
     }
@@ -104,18 +94,19 @@ export function SocialPanel() {
       {tab === 'group' && (
         <div className="flex-1 min-h-0 flex gap-4">
           {!group?.group ? (
-            /* No group — show create/join */
-            <div className="flex-1 panel p-6 flex flex-col items-center justify-center">
-              <h3 className="text-lg font-semibold mb-4" style={{ color: '#22c55e' }}>Join or Create a Collective</h3>
-              <p className="text-sm mb-6 text-center" style={{ color: 'var(--text-secondary)' }}>
-                Combine compute power with other players for shared bonuses.
-              </p>
-              <div className="w-full max-w-sm space-y-3">
+            /* No group — show create + browse groups */
+            <>
+              {/* Create */}
+              <div className="w-72 shrink-0 panel p-4 flex flex-col min-h-0">
+                <h3 className="text-sm font-semibold mb-3" style={{ color: '#22c55e' }}>Create a Collective</h3>
+                <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>
+                  {config.group.description}
+                </p>
                 <div className="flex gap-2">
                   <input
                     value={groupName}
                     onChange={e => setGroupName(e.target.value)}
-                    placeholder="New group name"
+                    placeholder="Group name"
                     className="flex-1 px-3 py-2 rounded text-sm outline-none"
                     style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
                   />
@@ -123,21 +114,42 @@ export function SocialPanel() {
                     Create
                   </button>
                 </div>
-                <div className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>or</div>
-                <div className="flex gap-2">
-                  <input
-                    value={joinName}
-                    onChange={e => setJoinName(e.target.value)}
-                    placeholder="Group name to join"
-                    className="flex-1 px-3 py-2 rounded text-sm outline-none"
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-                  />
-                  <button onClick={handleJoin} className="btn px-4 py-2 text-sm" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.25)' }}>
-                    Join
-                  </button>
+              </div>
+
+              {/* Browse groups */}
+              <div className="flex-1 panel p-4 flex flex-col min-h-0">
+                <h3 className="text-sm font-semibold mb-3" style={{ color: '#22c55e' }}>Join a Collective</h3>
+                <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
+                  {allGroups.length > 0 ? allGroups.map(g => (
+                    <div key={g.id} className="panel-card p-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">{g.name}</div>
+                        <div className="font-mono text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                          Open
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setError('');
+                          try {
+                            const data = await api.joinGroup(g.name);
+                            setGroup(data);
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
+                        }}
+                        className="btn px-3 py-1 text-xs"
+                        style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.25)' }}
+                      >
+                        Join
+                      </button>
+                    </div>
+                  )) : (
+                    <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>No groups yet — create the first one!</p>
+                  )}
                 </div>
               </div>
-            </div>
+            </>
           ) : (
             /* In a group — show details */
             <>

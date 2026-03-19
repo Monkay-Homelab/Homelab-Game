@@ -25,14 +25,17 @@ func Setup(authHandler *handlers.AuthHandler, gameHandler *handlers.GameHandler,
 	// WebSocket (auth via query param)
 	mux.HandleFunc("GET /ws", hub.HandleConnect(jwtSecret))
 
+	// Game config (public, static)
+	mux.HandleFunc("GET /api/game/config", gameHandler.GetConfig)
+
 	// Game routes (authenticated, rate limited per user)
 	authMw := middleware.Auth(jwtSecret)
-	gameRateLimit := middleware.RateLimitByUser(600) // 600 actions per minute per user (10/sec)
+	gameRateLimit := middleware.RateLimitByUser("game", 7200) // 7200 actions per minute per user (30/sec)
 	mux.Handle("GET /api/game/state", authMw(http.HandlerFunc(gameHandler.GetState)))
 	mux.Handle("POST /api/game/action", authMw(gameRateLimit(http.HandlerFunc(gameHandler.PerformAction))))
 
 	// Social routes (authenticated, rate limited)
-	socialRateLimit := middleware.RateLimitByUser(30) // 30 per minute per user
+	socialRateLimit := middleware.RateLimitByUser("social", 180) // 180 per minute per user
 	mux.Handle("GET /api/social/group", authMw(http.HandlerFunc(socialHandler.GetMyGroup)))
 	mux.Handle("GET /api/social/groups", authMw(http.HandlerFunc(socialHandler.ListGroups)))
 	mux.Handle("POST /api/social/group/create", authMw(socialRateLimit(http.HandlerFunc(socialHandler.CreateGroup))))

@@ -20,20 +20,20 @@ var Services = []ServiceTemplate{
 	{Name: "File Share", Type: "storage", MinTier: models.TierCoffeeTable, ComputePerTick: 2, ReputationPerTick: 1, PowerRequired: 10, Cost: 50},
 
 	// Closet Floor
-	{Name: "Plex", Type: "media", MinTier: models.TierClosetFloor, ComputePerTick: 5, ReputationPerTick: 5, PowerRequired: 30, Cost: 200},
+	{Name: "Plex", Type: "media", MinTier: models.TierClosetFloor, ComputePerTick: 5, ReputationPerTick: 5, MoneyPerTick: 1, PowerRequired: 30, Cost: 200},
 	{Name: "Home Assistant", Type: "automation", MinTier: models.TierClosetFloor, ComputePerTick: 3, ReputationPerTick: 4, PowerRequired: 15, Cost: 150},
 	{Name: "Nextcloud", Type: "cloud", MinTier: models.TierClosetFloor, ComputePerTick: 4, ReputationPerTick: 5, PowerRequired: 25, Cost: 250},
-	{Name: "Game Server", Type: "gaming", MinTier: models.TierClosetFloor, ComputePerTick: 8, ReputationPerTick: 6, PowerRequired: 40, Cost: 300},
+	{Name: "Game Server", Type: "gaming", MinTier: models.TierClosetFloor, ComputePerTick: 8, ReputationPerTick: 6, MoneyPerTick: 1, PowerRequired: 40, Cost: 300},
 
 	// 12U Rack
-	{Name: "Gitea", Type: "devtools", MinTier: models.TierRack12U, ComputePerTick: 10, ReputationPerTick: 8, PowerRequired: 20, Cost: 800},
+	{Name: "Gitea", Type: "devtools", MinTier: models.TierRack12U, ComputePerTick: 10, ReputationPerTick: 8, MoneyPerTick: 2, PowerRequired: 20, Cost: 800},
 	{Name: "Grafana + Prometheus", Type: "monitoring", MinTier: models.TierRack12U, ComputePerTick: 8, ReputationPerTick: 10, PowerRequired: 30, Cost: 1000},
 	{Name: "Reverse Proxy", Type: "networking", MinTier: models.TierRack12U, ComputePerTick: 5, ReputationPerTick: 12, PowerRequired: 10, Cost: 500},
 	{Name: "WireGuard VPN", Type: "vpn", MinTier: models.TierRack12U, ComputePerTick: 3, ReputationPerTick: 8, MoneyPerTick: 2, PowerRequired: 5, Cost: 400},
 	{Name: "TrueNAS", Type: "storage", MinTier: models.TierRack12U, ComputePerTick: 12, ReputationPerTick: 10, PowerRequired: 50, Cost: 1500},
 
 	// 24U Rack
-	{Name: "CI/CD Pipeline", Type: "devtools", MinTier: models.TierRack24U, ComputePerTick: 20, ReputationPerTick: 15, PowerRequired: 40, Cost: 3000},
+	{Name: "CI/CD Pipeline", Type: "devtools", MinTier: models.TierRack24U, ComputePerTick: 20, ReputationPerTick: 15, MoneyPerTick: 3, PowerRequired: 40, Cost: 3000},
 	{Name: "Docker Swarm", Type: "orchestration", MinTier: models.TierRack24U, ComputePerTick: 25, ReputationPerTick: 18, PowerRequired: 50, Cost: 4000},
 	{Name: "Mail Server", Type: "communication", MinTier: models.TierRack24U, ComputePerTick: 10, ReputationPerTick: 20, PowerRequired: 20, Cost: 2500},
 	{Name: "Matrix/Element", Type: "communication", MinTier: models.TierRack24U, ComputePerTick: 15, ReputationPerTick: 18, PowerRequired: 30, Cost: 3000},

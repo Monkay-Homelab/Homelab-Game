@@ -50,8 +50,12 @@ func (q *GroupQueries) GetByName(ctx context.Context, name string) (*models.Grou
 
 func (q *GroupQueries) List(ctx context.Context, limit int) ([]models.Group, error) {
 	rows, err := q.pool.Query(ctx,
-		`SELECT id, name, founder_id, min_contribution, profit_split, created_at
-		 FROM groups ORDER BY created_at DESC LIMIT $1`, limit,
+		`SELECT g.id, g.name, g.founder_id, g.min_contribution, g.profit_split,
+		        (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) as member_count,
+		        g.created_at
+		 FROM groups g
+		 ORDER BY member_count DESC, g.created_at DESC
+		 LIMIT $1`, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -61,7 +65,7 @@ func (q *GroupQueries) List(ctx context.Context, limit int) ([]models.Group, err
 	var groups []models.Group
 	for rows.Next() {
 		var g models.Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.FounderID, &g.MinContribution, &g.ProfitSplit, &g.CreatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.FounderID, &g.MinContribution, &g.ProfitSplit, &g.MemberCount, &g.CreatedAt); err != nil {
 			return nil, err
 		}
 		groups = append(groups, g)

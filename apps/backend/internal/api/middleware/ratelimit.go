@@ -67,10 +67,15 @@ func checkRate(key string, maxPerMinute int) bool {
 
 // RateLimit limits requests per client IP.
 func RateLimit(maxPerMinute int) func(http.Handler) http.Handler {
+	return RateLimitNamed("auth", maxPerMinute)
+}
+
+// RateLimitNamed limits requests per client IP with a named bucket.
+func RateLimitNamed(name string, maxPerMinute int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := getClientIP(r)
-			if !checkRate("ip:"+ip, maxPerMinute) {
+			if !checkRate(name+":ip:"+ip, maxPerMinute) {
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
 				return
 			}
@@ -79,14 +84,14 @@ func RateLimit(maxPerMinute int) func(http.Handler) http.Handler {
 	}
 }
 
-// RateLimitByUser limits requests per authenticated user ID.
+// RateLimitByUser limits requests per authenticated user ID with a named bucket.
 // Falls back to IP if user ID not in context.
-func RateLimitByUser(maxPerMinute int) func(http.Handler) http.Handler {
+func RateLimitByUser(name string, maxPerMinute int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := "ip:" + getClientIP(r)
+			key := name + ":ip:" + getClientIP(r)
 			if uid, ok := r.Context().Value(UserIDKey).(string); ok && uid != "" {
-				key = "user:" + uid
+				key = name + ":user:" + uid
 			}
 			if !checkRate(key, maxPerMinute) {
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)

@@ -1,5 +1,6 @@
 import type { GameState, UpgradeTemplate } from '../api';
 import { useGameStore } from '../stores/gameStore';
+import { useConfig, prestigeScale } from '../hooks/useConfig';
 
 const typeConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {
   cooling: { color: '#06b6d4', bg: 'rgba(6,182,212,0.1)', border: 'rgba(6,182,212,0.25)', label: 'Cooling' },
@@ -9,9 +10,11 @@ const typeConfig: Record<string, { color: string; bg: string; border: string; la
 };
 
 export function UpgradePanel({ state }: { state: GameState }) {
+  const config = useConfig();
   const buyUpgrade = useGameStore(s => s.buyUpgrade);
   const ownedNames = new Set(state.upgrades?.map(u => u.name) || []);
   const available = state.available_upgrades || [];
+  const scale = prestigeScale(config, state.colo_count);
 
   const grouped = available.reduce((acc, u) => {
     if (!acc[u.type]) acc[u.type] = [];
@@ -66,7 +69,7 @@ export function UpgradePanel({ state }: { state: GameState }) {
                     ) : (
                       <button
                         onClick={() => buyUpgrade(u.name)}
-                        disabled={u.cost_type === 'money' ? state.money < u.cost : state.compute_units < u.cost}
+                        disabled={u.cost_type === 'money' ? state.money < u.cost : state.compute_units < Math.floor(u.cost * (u.type === 'automation' ? scale : 1))}
                         className="btn px-3 py-1 text-xs shrink-0 ml-2"
                         style={{
                           background: cfg.bg,
@@ -74,7 +77,7 @@ export function UpgradePanel({ state }: { state: GameState }) {
                           border: `1px solid ${cfg.border}`,
                         }}
                       >
-                        {u.cost_type === 'money' ? `$${u.cost.toLocaleString()}` : `${u.cost.toLocaleString()} CU`}
+                        {u.cost_type === 'money' ? `$${u.cost.toLocaleString()}` : `${Math.floor(u.cost * (u.type === 'automation' ? scale : 1)).toLocaleString()} CU`}
                       </button>
                     )}
                   </div>

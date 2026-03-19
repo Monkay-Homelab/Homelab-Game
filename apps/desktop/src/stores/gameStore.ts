@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type GameState } from '../api';
+import { api, type GameState, type GameConfig } from '../api';
 
 export interface GameEvent {
   type: string;
@@ -11,6 +11,7 @@ export interface GameEvent {
 
 interface GameStore {
   state: GameState | null;
+  config: GameConfig | null;
   loading: boolean;
   error: string | null;
   token: string | null;
@@ -20,6 +21,7 @@ interface GameStore {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => void;
+  fetchConfig: () => Promise<void>;
   fetchState: () => Promise<void>;
   runJob: () => Promise<void>;
   buyHardware: (name: string) => Promise<void>;
@@ -44,11 +46,22 @@ interface GameStore {
 
 export const useGameStore = create<GameStore>((set, get) => ({
   state: null,
+  config: null,
   loading: false,
   error: null,
   token: localStorage.getItem('token'),
   user: null,
   events: [],
+
+  fetchConfig: async () => {
+    if (get().config) return;
+    try {
+      const config = await api.getConfig();
+      set({ config });
+    } catch {
+      setTimeout(() => get().fetchConfig(), 3000);
+    }
+  },
 
   login: async (email, password) => {
     set({ loading: true, error: null });
@@ -56,6 +69,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const res = await api.login(email, password);
       localStorage.setItem('token', res.token);
       set({ token: res.token, user: res.user, loading: false });
+      get().fetchConfig();
       await get().fetchState();
     } catch (e) {
       set({ error: (e as Error).message, loading: false });
@@ -68,6 +82,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const res = await api.register(email, password, displayName);
       localStorage.setItem('token', res.token);
       set({ token: res.token, user: res.user, loading: false });
+      get().fetchConfig();
       await get().fetchState();
     } catch (e) {
       set({ error: (e as Error).message, loading: false });
@@ -84,11 +99,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const state = await api.getState();
       set({ state, error: null });
     } catch (e) {
-      set({ error: (e as Error).message });
+      const msg = (e as Error).message;
+      if (msg.includes('not found')) {
+        localStorage.removeItem('token');
+        set({ token: null, user: null, state: null, error: null });
+        return;
+      }
+      set({ error: msg });
     }
   },
 
   runJob: async () => {
+    // Optimistically add click reward locally for instant feedback
+    const s = get().state;
+    const cfg = get().config;
+    if (s && cfg) {
+      const tierCfg = cfg.tiers.find(t => t.id === s.tier);
+      const reward = tierCfg?.job_reward || 10;
+      const knowledgeBoost = 1 + s.knowledge_points / cfg.gameplay.knowledge_boost_divisor;
+      set({ state: { ...s, compute_units: s.compute_units + Math.floor(reward * knowledgeBoost) } });
+    }
     try {
       const state = await api.action('run_job');
       set({ state, error: null });
@@ -128,18 +158,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   deployAllServices: async () => {
-    const s = get().state;
-    if (!s) return;
-    const deployed = new Set(s.services?.map(svc => svc.name) || []);
-    const available = (s.available_services || []).filter(svc => !deployed.has(svc.name));
-
-    for (const svc of available) {
-      try {
-        const state = await api.action('deploy_service', { name: svc.name });
-        set({ state, error: null });
-      } catch {
-        break;
-      }
+    set({ error: null });
+    try {
+      const state = await api.action('bulk_deploy_services');
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
     }
   },
 
@@ -154,18 +178,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   buyAllUpgrades: async (type) => {
-    const s = get().state;
-    if (!s) return;
-    const owned = new Set(s.upgrades?.map(u => u.name) || []);
-    const available = (s.available_upgrades || []).filter(u => !owned.has(u.name) && (!type || u.type === type));
-
-    for (const u of available) {
-      try {
-        const state = await api.action('buy_upgrade', { name: u.name });
-        set({ state, error: null });
-      } catch {
-        break;
-      }
+    set({ error: null });
+    try {
+      const state = await api.action('bulk_buy_upgrades', type ? { type } : {});
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
     }
   },
 
@@ -180,25 +198,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   upgradeAllComponents: async () => {
-    const s = get().state;
-    if (!s) return;
-    const upgradeableTypes = ['server', 'desktop', 'sbc', 'mini_pc', 'gpu_server'];
-    const components = ['cpu', 'ram', 'storage', 'nic'];
-    const upgradeableHardware = (s.hardware || []).filter(h => upgradeableTypes.includes(h.type));
-
-    for (const h of upgradeableHardware) {
-      for (const comp of components) {
-        // Keep upgrading until it fails (max level or out of CU)
-        let success = true;
-        while (success) {
-          try {
-            const state = await api.action('upgrade_component', { hardware_id: h.id, component: comp });
-            set({ state, error: null });
-          } catch {
-            success = false;
-          }
-        }
-      }
+    set({ error: null });
+    try {
+      const state = await api.action('bulk_upgrade_components');
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
     }
   },
 
@@ -233,19 +238,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   deployAllSaas: async () => {
-    const s = get().state;
-    if (!s) return;
-    const availableSaas = s.available_saas || [];
-    const deployed = new Set((s.services || []).filter(svc => availableSaas.some(t => t.name === svc.name)).map(svc => svc.name));
-    const undeployed = availableSaas.filter(svc => !deployed.has(svc.name));
-
-    for (const svc of undeployed) {
-      try {
-        const state = await api.action('deploy_saas', { name: svc.name });
-        set({ state, error: null });
-      } catch {
-        break;
-      }
+    set({ error: null });
+    try {
+      const state = await api.action('bulk_deploy_saas');
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
     }
   },
 

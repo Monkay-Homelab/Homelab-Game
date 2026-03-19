@@ -15,24 +15,24 @@ type UpgradeTemplate struct {
 
 // Cooling upgrades — increase cooling_capacity
 var CoolingUpgrades = []UpgradeTemplate{
-	{Name: "USB Fan", Type: "cooling", MinTier: models.TierCoffeeTable, Cost: 30, Description: "A cheap USB fan pointed at your server", Effect: "+30 cooling"},
-	{Name: "Box Fan", Type: "cooling", MinTier: models.TierClosetFloor, Cost: 100, Description: "Box fan propping the closet door open", Effect: "+60 cooling"},
-	{Name: "Blanking Panels", Type: "cooling", MinTier: models.TierRack12U, Cost: 500, Description: "Proper airflow management in the rack", Effect: "+100 cooling"},
-	{Name: "In-Rack Fans", Type: "cooling", MinTier: models.TierRack12U, Cost: 2000, Description: "Rack-mounted fan units", Effect: "+200 cooling"},
-	{Name: "Portable AC Unit", Type: "cooling", MinTier: models.TierRack24U, Cost: 8000, Description: "Dedicated AC for the server room", Effect: "+400 cooling"},
-	{Name: "Mini Split AC", Type: "cooling", MinTier: models.TierRack36U, Cost: 25000, Description: "Proper HVAC for your lab", Effect: "+800 cooling"},
-	{Name: "In-Row Cooling", Type: "cooling", MinTier: models.TierRack48U, Cost: 80000, Description: "Datacenter-grade precision cooling", Effect: "+1500 cooling"},
+	{Name: "USB Fan", Type: "cooling", MinTier: models.TierCoffeeTable, Cost: 30, Description: "A cheap USB fan pointed at your server", Effect: "+75 cooling"},
+	{Name: "Box Fan", Type: "cooling", MinTier: models.TierClosetFloor, Cost: 100, Description: "Box fan propping the closet door open", Effect: "+150 cooling"},
+	{Name: "Blanking Panels", Type: "cooling", MinTier: models.TierRack12U, Cost: 500, Description: "Proper airflow management in the rack", Effect: "+250 cooling"},
+	{Name: "In-Rack Fans", Type: "cooling", MinTier: models.TierRack12U, Cost: 2000, Description: "Rack-mounted fan units", Effect: "+500 cooling"},
+	{Name: "Portable AC Unit", Type: "cooling", MinTier: models.TierRack24U, Cost: 8000, Description: "Dedicated AC for the server room", Effect: "+1000 cooling"},
+	{Name: "Mini Split AC", Type: "cooling", MinTier: models.TierRack36U, Cost: 25000, Description: "Proper HVAC for your lab", Effect: "+2000 cooling"},
+	{Name: "In-Row Cooling", Type: "cooling", MinTier: models.TierRack48U, Cost: 80000, Description: "Datacenter-grade precision cooling", Effect: "+3750 cooling"},
 }
 
 // Cooling capacity values matching each upgrade
 var CoolingValues = map[string]int{
-	"USB Fan":         30,
-	"Box Fan":         60,
-	"Blanking Panels": 100,
-	"In-Rack Fans":    200,
-	"Portable AC Unit": 400,
-	"Mini Split AC":   800,
-	"In-Row Cooling":  1500,
+	"USB Fan":          75,
+	"Box Fan":          150,
+	"Blanking Panels":  250,
+	"In-Rack Fans":     500,
+	"Portable AC Unit": 1000,
+	"Mini Split AC":    2000,
+	"In-Row Cooling":   3750,
 }
 
 // Networking upgrades — increase network_tier (0-4)
