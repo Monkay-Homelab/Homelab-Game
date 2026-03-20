@@ -17,3 +17,7 @@ apps/desktop/src-tauri/target/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude
+_temp*/
+

@@ -131,6 +131,32 @@ Donate surplus compute units to a community pool. Lifetime donations tracked on 
 | Real-time | WebSocket |
 | Package manager | pnpm (JS/TS), Go modules (backend) |
 
+## Claude Code Agent Team
+
+This project includes a multi-agent development team for Claude Code, located in `.claude/`. The team coordinates planning, implementation, review, testing, and UX design through specialized agents and orchestration skills.
+
+### Agents
+
+| Agent | Role |
+| ----- | ---- |
+| **Staff Engineer** | Architecture, TDDs, code review, project specs |
+| **Senior Engineer** | Implementation, debugging, code quality |
+| **Project Manager** | Issue planning, task decomposition, dependency management |
+| **SDET** | Test infrastructure, verification, quality engineering |
+| **UX Designer** | Design specs, UX review, design QA |
+
+### Skills
+
+| Skill | Purpose |
+| ----- | ------- |
+| `/dev <work>` | Orchestrates the full agent team for planning and executing development work |
+| `/specs` | Bootstraps project specification files in `docs/spec/` |
+| `/vote <proposal>` | PBFT-inspired consensus protocol for multi-agent decision validation |
+| `/evolve-agents` | Reviews and improves agent definitions |
+| `/evolve-skills` | Reviews and improves skill definitions |
+
+All agents use GitHub Issues via `gh` CLI for issue tracking and coordination.
+
 ## Documentation
 
 - **[GAME-MECHANICS.md](.documents/GAME-MECHANICS.md)** — Complete game mechanics reference with formulas, catalogs, and balance data
