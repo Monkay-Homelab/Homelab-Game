@@ -6,6 +6,7 @@ import { ClickArea } from './components/ClickArea';
 import { HardwarePanel } from './components/HardwarePanel';
 import { ServicePanel } from './components/ServicePanel';
 import { TierProgress } from './components/TierProgress';
+import { DonatePanel } from './components/DonatePanel';
 import { UpgradePanel } from './components/UpgradePanel';
 import { SaasPanel } from './components/SaasPanel';
 import { DatacenterPanel } from './components/DatacenterPanel';
@@ -96,6 +97,7 @@ export function App() {
         <div className="w-72 shrink-0 flex flex-col gap-3 min-h-0">
           <ClickArea tier={state.tier} />
           <TierProgress tier={state.tier} computeUnits={state.compute_units} coloCount={state.colo_count} />
+          <DonatePanel state={state} />
         </div>
 
         {/* Right Content — Tabbed */}

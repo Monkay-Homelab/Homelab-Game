@@ -41,8 +41,10 @@ type GameState struct {
 	DatacenterTier           int       `json:"datacenter_tier"`
 	OwnsDatacenter           bool      `json:"owns_datacenter"`
 	DatacenterLevel          int       `json:"datacenter_level"`
-	DatacenterIncomeMultiplier float64 `json:"datacenter_income_multiplier"`
-	LastTickAt               time.Time `json:"last_tick_at"`
+	DatacenterIncomeMultiplier float64   `json:"datacenter_income_multiplier"`
+	TotalDonatedCU             int64     `json:"total_donated_cu"`
+	LastCustomerGrowthAt       time.Time `json:"last_customer_growth_at"`
+	LastTickAt                 time.Time `json:"last_tick_at"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }

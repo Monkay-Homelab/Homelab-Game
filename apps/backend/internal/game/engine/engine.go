@@ -37,10 +37,10 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	for _, h := range hardware {
 		compute := h.ComputePerTick
 		powerDraw := h.PowerDraw
-		// Apply component upgrade bonuses for this hardware
+		// Apply component upgrade bonuses for this hardware (ComputeBonus is a percentage of base)
 		for _, cu := range compUpgrades {
 			if cu.HardwareID == h.ID {
-				compute += int64(cu.ComputeBonus)
+				compute += h.ComputePerTick * int64(cu.ComputeBonus) / 100
 				powerDraw -= cu.PowerReduction
 			}
 		}
@@ -253,7 +253,7 @@ func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload 
 	case "upgrade_tier":
 		return e.upgradeTier(gs)
 	case "colo":
-		return e.prestige(gs, hardware, services)
+		return e.prestige(gs, hardware, services, compUpgrades)
 	case "bulk_upgrade_components":
 		return e.bulkUpgradeComponents(gs, hardware, compUpgrades)
 	case "bulk_deploy_services":
@@ -262,6 +262,8 @@ func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload 
 		return e.bulkBuyUpgrades(gs, payload, upgrades)
 	case "bulk_deploy_saas":
 		return e.bulkDeploySaas(gs, services)
+	case "donate_cu":
+		return e.donateCU(gs, payload)
 	case "build_datacenter":
 		return e.buildDatacenter(gs)
 	case "upgrade_datacenter":
@@ -704,14 +706,14 @@ func (e *Engine) upgradeComponent(gs *models.GameState, payload json.RawMessage,
 		HardwareID:     found.ID,
 		Component:      p.Component,
 		Level:          newLevel,
-		ComputeBonus:   info.ComputeAdd * newLevel,
+		ComputeBonus:   info.ComputePercent * newLevel, // percentage of base compute (e.g. 15 = +15%)
 		PowerReduction: info.PowerReduce * newLevel,
 	}
 
 	return &ActionResult{ComponentUpgrade: cu}, nil
 }
 
-func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, services []models.Service) (*ActionResult, error) {
+func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, services []models.Service, compUpgrades []models.ComponentUpgrade) (*ActionResult, error) {
 	// Must be at 48U rack with SaaS unlocked
 	if gs.Tier != models.TierRack48U {
 		return nil, fmt.Errorf("must be at 48U rack tier to colo")
@@ -723,10 +725,16 @@ func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, serv
 		return nil, fmt.Errorf("maximum colocations reached")
 	}
 
-	// Snapshot current rack's total income for the colo rack
+	// Snapshot current rack's total income for the colo rack (including component upgrades)
 	var totalCompute, totalRep, totalMoney int64
 	for _, h := range hardware {
-		totalCompute += h.ComputePerTick
+		compute := h.ComputePerTick
+		for _, cu := range compUpgrades {
+			if cu.HardwareID == h.ID {
+				compute += h.ComputePerTick * int64(cu.ComputeBonus) / 100
+			}
+		}
+		totalCompute += compute
 	}
 	for _, s := range services {
 		totalCompute += s.ComputePerTick
@@ -909,6 +917,28 @@ func (e *Engine) deploySaas(gs *models.GameState, payload json.RawMessage) (*Act
 	return &ActionResult{NewService: svc, NewCustomer: customer}, nil
 }
 
+type donateCUPayload struct {
+	Amount int64 `json:"amount"`
+}
+
+func (e *Engine) donateCU(gs *models.GameState, payload json.RawMessage) (*ActionResult, error) {
+	var p donateCUPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("invalid payload")
+	}
+	if p.Amount <= 0 {
+		return nil, fmt.Errorf("amount must be positive")
+	}
+	if gs.ComputeUnits < p.Amount {
+		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", p.Amount, gs.ComputeUnits)
+	}
+
+	gs.ComputeUnits -= p.Amount
+	gs.TotalDonatedCU += p.Amount
+
+	return &ActionResult{}, nil
+}
+
 func (e *Engine) buildDatacenter(gs *models.GameState) (*ActionResult, error) {
 	if gs.OwnsDatacenter {
 		return nil, fmt.Errorf("you already own a datacenter")
@@ -959,8 +989,8 @@ func (e *Engine) upgradeDatacenter(gs *models.GameState) (*ActionResult, error) 
 	gs.Money -= moneyCost
 	gs.ComputeUnits -= computeCost
 	gs.DatacenterLevel++
-	// Each level adds 0.25x to the income multiplier
-	gs.DatacenterIncomeMultiplier = 1.0 + float64(gs.DatacenterLevel)*0.25
+	// Each level adds 0.25x to the income multiplier (base 1.25 so level 1 = 1.5x matches build)
+	gs.DatacenterIncomeMultiplier = 1.25 + float64(gs.DatacenterLevel)*0.25
 
 	return &ActionResult{}, nil
 }
@@ -1056,7 +1086,7 @@ func (e *Engine) bulkUpgradeComponents(gs *models.GameState, hardware []models.H
 					HardwareID:     h.ID,
 					Component:      comp,
 					Level:          newLevel,
-					ComputeBonus:   info.ComputeAdd * newLevel,
+					ComputeBonus:   info.ComputePercent * newLevel,
 					PowerReduction: info.PowerReduce * newLevel,
 				}
 				// Update in-memory list

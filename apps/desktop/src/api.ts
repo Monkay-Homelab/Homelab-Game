@@ -56,6 +56,7 @@ export interface GameState {
   owns_datacenter: boolean;
   datacenter_level: number;
   datacenter_income_multiplier: number;
+  total_donated_cu: number;
   hardware: HardwareItem[];
   colo_racks: ColoRackItem[];
   services: ServiceItem[];
@@ -71,6 +72,7 @@ export interface GameState {
   throttled: boolean;
   group_bonus: number;
   group_members: number;
+  global_donated_cu: number;
 }
 
 export interface ColoRackItem {

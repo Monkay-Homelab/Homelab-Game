@@ -202,7 +202,8 @@ func GetConfig() *GameConfig {
 				{ID: "reputation", Label: "Reputation"},
 				{ID: "colo_count", Label: "Prestiges"},
 				{ID: "money", Label: "Money"},
-				{ID: "group", Label: "Groups"},
+				{ID: "donated_cu", Label: "Donated CU"},
+			{ID: "group", Label: "Groups"},
 			},
 		},
 		Group: GroupConfig{

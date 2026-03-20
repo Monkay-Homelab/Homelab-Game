@@ -139,7 +139,7 @@ export function HardwarePanel({ state }: { state: GameState }) {
             let power = h.power_draw;
             for (const cu of compUps) {
               if (cu.hardware_id === h.id) {
-                compute += cu.compute_bonus;
+                compute += Math.floor(h.compute_per_tick * cu.compute_bonus / 100);
                 power -= cu.power_reduction;
               }
             }
@@ -205,7 +205,7 @@ export function HardwarePanel({ state }: { state: GameState }) {
                     {grouped[cat].map(h => {
                       const isUpgradeable = UPGRADEABLE_TYPES.includes(h.type);
                       const hwCompUps = (state.component_upgrades || []).filter(cu => cu.hardware_id === h.id);
-                      const totalBonus = hwCompUps.reduce((sum, cu) => sum + cu.compute_bonus, 0);
+                      const totalBonus = hwCompUps.reduce((sum, cu) => sum + Math.floor(h.compute_per_tick * cu.compute_bonus / 100), 0);
                       const totalPowerReduce = hwCompUps.reduce((sum, cu) => sum + cu.power_reduction, 0);
 
                       return (
@@ -229,7 +229,7 @@ export function HardwarePanel({ state }: { state: GameState }) {
                                   {[...hwCompUps].sort((a, b) => COMPONENTS.indexOf(a.component) - COMPONENTS.indexOf(b.component)).map(cu => (
                                     <span key={`${h.id}-${cu.component}`} className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: colors.bg, color: colors.text }}>
                                       {cu.component.toUpperCase()} Lv{cu.level}
-                                      {cu.compute_bonus > 0 && ` +${cu.compute_bonus}`}
+                                      {cu.compute_bonus > 0 && ` +${cu.compute_bonus}%`}
                                       {cu.power_reduction > 0 && ` -${cu.power_reduction}W`}
                                     </span>
                                   ))}

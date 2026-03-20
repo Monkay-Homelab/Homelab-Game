@@ -87,19 +87,19 @@ var KnowledgePointValues = map[string]int{
 
 // Component upgrade costs per level
 type ComponentUpgradeInfo struct {
-	Component   string `json:"component"`
-	MaxLevel    int    `json:"max_level"`
-	BaseCost    int64  `json:"base_cost"`
-	CostScale   float64 `json:"cost_scale"`
-	ComputeAdd  int    `json:"compute_add"`
-	PowerReduce int    `json:"power_reduce"`
+	Component      string  `json:"component"`
+	MaxLevel       int     `json:"max_level"`
+	BaseCost       int64   `json:"base_cost"`
+	CostScale      float64 `json:"cost_scale"`
+	ComputePercent int     `json:"compute_percent"` // % of base compute per level
+	PowerReduce    int     `json:"power_reduce"`
 }
 
 var ComponentUpgrades = []ComponentUpgradeInfo{
-	{Component: "cpu", MaxLevel: 5, BaseCost: 500, CostScale: 2.0, ComputeAdd: 5, PowerReduce: 0},
-	{Component: "ram", MaxLevel: 5, BaseCost: 300, CostScale: 2.0, ComputeAdd: 3, PowerReduce: 0},
-	{Component: "storage", MaxLevel: 5, BaseCost: 400, CostScale: 2.0, ComputeAdd: 2, PowerReduce: 0},
-	{Component: "nic", MaxLevel: 3, BaseCost: 600, CostScale: 2.5, ComputeAdd: 1, PowerReduce: 5},
+	{Component: "cpu", MaxLevel: 5, BaseCost: 500, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
+	{Component: "ram", MaxLevel: 5, BaseCost: 300, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
+	{Component: "storage", MaxLevel: 5, BaseCost: 400, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
+	{Component: "nic", MaxLevel: 3, BaseCost: 600, CostScale: 2.5, ComputePercent: 5, PowerReduce: 5},
 }
 
 func GetComponentUpgradeInfo(component string) *ComponentUpgradeInfo {

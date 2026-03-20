@@ -50,7 +50,7 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
       for (const h of state.hardware) {
         let bonus = 0;
         for (const cu of compUps) {
-          if (cu.hardware_id === h.id) bonus += cu.compute_bonus;
+          if (cu.hardware_id === h.id) bonus += Math.floor(h.compute_per_tick * cu.compute_bonus / 100);
         }
         hardwareCompute += h.compute_per_tick + bonus;
 

@@ -38,6 +38,7 @@ interface GameStore {
   deployAllSaas: () => Promise<void>;
   upgradeTier: () => Promise<void>;
   colo: () => Promise<void>;
+  donateCU: (amount: number) => Promise<void>;
   buildDatacenter: () => Promise<void>;
   upgradeDatacenter: () => Promise<void>;
   addEvent: (event: GameEvent) => void;
@@ -261,6 +262,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('colo');
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  donateCU: async (amount: number) => {
+    set({ error: null });
+    try {
+      const state = await api.action('donate_cu', { amount });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });

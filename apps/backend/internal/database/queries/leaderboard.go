@@ -72,6 +72,7 @@ func (q *LeaderboardQueries) GetTopByCategory(ctx context.Context, category stri
 		"reputation": "gs.reputation",
 		"colo_count": "gs.colo_count",
 		"money":      "gs.money",
+		"donated_cu": "gs.total_donated_cu",
 		"services":   "(SELECT COUNT(*) FROM services s WHERE s.game_state_id = gs.id)",
 		"prestige":   "gs.colo_count",
 	}

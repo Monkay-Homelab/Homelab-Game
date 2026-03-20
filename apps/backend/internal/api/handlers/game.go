@@ -96,6 +96,7 @@ type fullStateResponse struct {
 	Throttled          bool                         `json:"throttled"`
 	GroupBonus         float64                      `json:"group_bonus"`
 	GroupMembers       int                          `json:"group_members"`
+	GlobalDonatedCU    int64                        `json:"global_donated_cu"`
 }
 
 func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, svcs []models.Service, ups []models.Upgrade, compUps []models.ComponentUpgrade, custs []models.Customer, exps []models.Expense, colos []models.ColoRack, evts []*events.GameEvent) fullStateResponse {
@@ -149,6 +150,78 @@ func (h *GameHandler) getGroupBonus(ctx context.Context, userID string) (float64
 		bonus = 1.5
 	}
 	return bonus, count
+}
+
+// processCustomerGrowth uses a separate timestamp (LastCustomerGrowthAt) to accumulate
+// time across multiple polling intervals, so 5-second polls don't starve the 60s growth timer.
+func (h *GameHandler) processCustomerGrowth(ctx context.Context, gs *models.GameState, custs []models.Customer, svcs []models.Service, now time.Time) ([]models.Customer, []models.Service) {
+	customerElapsed := now.Sub(gs.LastCustomerGrowthAt).Seconds()
+	if customerElapsed < 1 {
+		return custs, svcs
+	}
+
+	customerCountByType := make(map[string]int)
+	for _, c := range custs {
+		customerCountByType[c.ServiceType]++
+	}
+
+	grew := false
+	for _, s := range svcs {
+		saasTemplate := catalog.GetSaasServiceByName(s.Name)
+		if saasTemplate == nil {
+			continue
+		}
+
+		currentCount := customerCountByType[saasTemplate.Type]
+		if currentCount >= saasTemplate.MaxCustomers {
+			continue
+		}
+
+		// Tiered growth: interval = 60 / (1 + currentCustomers * 0.1) seconds
+		interval := 60.0 / (1.0 + float64(currentCount)*0.1)
+		newCount := int(customerElapsed / interval)
+		if newCount < 1 {
+			continue
+		}
+		if currentCount+newCount > saasTemplate.MaxCustomers {
+			newCount = saasTemplate.MaxCustomers - currentCount
+		}
+
+		for j := 0; j < newCount; j++ {
+			firstName := catalog.CustomerFirstNames[(gs.TotalCustomers+j)%len(catalog.CustomerFirstNames)]
+			lastName := catalog.CustomerLastNames[(gs.TotalCustomers+j)%len(catalog.CustomerLastNames)]
+			newCust := models.Customer{
+				GameStateID:    gs.ID,
+				Name:           firstName + " " + lastName,
+				ServiceType:    saasTemplate.Type,
+				MonthlyRevenue: saasTemplate.RevenuePerCustomer,
+				Satisfaction:   100,
+			}
+			if err := h.customers.Create(ctx, &newCust); err == nil {
+				custs = append(custs, newCust)
+				customerCountByType[saasTemplate.Type]++
+			}
+		}
+		gs.TotalCustomers += newCount
+		grew = true
+
+		// Update the service's MoneyPerTick to reflect total customer revenue
+		newTotal := int64(customerCountByType[saasTemplate.Type]) * saasTemplate.RevenuePerCustomer
+		for i := range svcs {
+			if svcs[i].ID == s.ID {
+				svcs[i].MoneyPerTick = newTotal
+				h.services.Update(ctx, &svcs[i])
+				break
+			}
+		}
+	}
+
+	// Only advance the timer when customers actually grew, so partial intervals accumulate
+	if grew {
+		gs.LastCustomerGrowthAt = now
+	}
+
+	return custs, svcs
 }
 
 func (h *GameHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
@@ -212,61 +285,9 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		gs.ComputeUnits += groupExtra
 	}
 
-	// Customer growth for SaaS services
+	// Customer growth for SaaS services (uses separate timer so 5s polling doesn't starve growth)
 	if gs.SaasUnlocked {
-		customerCountByType := make(map[string]int)
-		for _, c := range custs {
-			customerCountByType[c.ServiceType]++
-		}
-
-		for _, s := range svcs {
-			saasTemplate := catalog.GetSaasServiceByName(s.Name)
-			if saasTemplate == nil {
-				continue
-			}
-
-			currentCount := customerCountByType[saasTemplate.Type]
-			if currentCount >= saasTemplate.MaxCustomers {
-				continue
-			}
-
-			// Tiered growth: interval = 60 / (1 + currentCustomers * 0.1) seconds
-			interval := 60.0 / (1.0 + float64(currentCount)*0.1)
-			newCount := int(elapsed / interval)
-			if newCount < 1 {
-				continue
-			}
-			if currentCount+newCount > saasTemplate.MaxCustomers {
-				newCount = saasTemplate.MaxCustomers - currentCount
-			}
-
-			for j := 0; j < newCount; j++ {
-				firstName := catalog.CustomerFirstNames[(gs.TotalCustomers+j)%len(catalog.CustomerFirstNames)]
-				lastName := catalog.CustomerLastNames[(gs.TotalCustomers+j)%len(catalog.CustomerLastNames)]
-				newCust := models.Customer{
-					GameStateID:    gs.ID,
-					Name:           firstName + " " + lastName,
-					ServiceType:    saasTemplate.Type,
-					MonthlyRevenue: saasTemplate.RevenuePerCustomer,
-					Satisfaction:   100,
-				}
-				if err := h.customers.Create(r.Context(), &newCust); err == nil {
-					custs = append(custs, newCust)
-					customerCountByType[saasTemplate.Type]++
-				}
-			}
-			gs.TotalCustomers += newCount
-
-			// Update the service's MoneyPerTick to reflect total customer revenue
-			newTotal := int64(customerCountByType[saasTemplate.Type]) * saasTemplate.RevenuePerCustomer
-			for i := range svcs {
-				if svcs[i].ID == s.ID {
-					svcs[i].MoneyPerTick = newTotal
-					h.services.Update(r.Context(), &svcs[i])
-					break
-				}
-			}
-		}
+		custs, svcs = h.processCustomerGrowth(r.Context(), gs, custs, svcs, now)
 	}
 
 	if err := h.gameState.Update(r.Context(), gs); err != nil {
@@ -285,6 +306,7 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
+	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -357,61 +379,9 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		gs.ComputeUnits += groupExtra
 	}
 
-	// Customer growth for SaaS services
+	// Customer growth for SaaS services (uses separate timer so 5s polling doesn't starve growth)
 	if gs.SaasUnlocked {
-		customerCountByType := make(map[string]int)
-		for _, c := range custs {
-			customerCountByType[c.ServiceType]++
-		}
-
-		for _, s := range svcs {
-			saasTemplate := catalog.GetSaasServiceByName(s.Name)
-			if saasTemplate == nil {
-				continue
-			}
-
-			currentCount := customerCountByType[saasTemplate.Type]
-			if currentCount >= saasTemplate.MaxCustomers {
-				continue
-			}
-
-			// Tiered growth: interval = 60 / (1 + currentCustomers * 0.1) seconds
-			interval := 60.0 / (1.0 + float64(currentCount)*0.1)
-			newCount := int(elapsed / interval)
-			if newCount < 1 {
-				continue
-			}
-			if currentCount+newCount > saasTemplate.MaxCustomers {
-				newCount = saasTemplate.MaxCustomers - currentCount
-			}
-
-			for j := 0; j < newCount; j++ {
-				firstName := catalog.CustomerFirstNames[(gs.TotalCustomers+j)%len(catalog.CustomerFirstNames)]
-				lastName := catalog.CustomerLastNames[(gs.TotalCustomers+j)%len(catalog.CustomerLastNames)]
-				newCust := models.Customer{
-					GameStateID:    gs.ID,
-					Name:           firstName + " " + lastName,
-					ServiceType:    saasTemplate.Type,
-					MonthlyRevenue: saasTemplate.RevenuePerCustomer,
-					Satisfaction:   100,
-				}
-				if err := h.customers.Create(r.Context(), &newCust); err == nil {
-					custs = append(custs, newCust)
-					customerCountByType[saasTemplate.Type]++
-				}
-			}
-			gs.TotalCustomers += newCount
-
-			// Update the service's MoneyPerTick to reflect total customer revenue
-			newTotal := int64(customerCountByType[saasTemplate.Type]) * saasTemplate.RevenuePerCustomer
-			for i := range svcs {
-				if svcs[i].ID == s.ID {
-					svcs[i].MoneyPerTick = newTotal
-					h.services.Update(r.Context(), &svcs[i])
-					break
-				}
-			}
-		}
+		custs, svcs = h.processCustomerGrowth(r.Context(), gs, custs, svcs, now)
 	}
 
 	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps)
@@ -557,5 +527,6 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
+	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())
 	json.NewEncoder(w).Encode(resp)
 }
