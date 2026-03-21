@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/homelab-game/backend/internal/config"
 	"github.com/homelab-game/backend/internal/database"
 	"github.com/homelab-game/backend/internal/database/queries"
+	"github.com/homelab-game/backend/internal/game/bitcoin"
 	"github.com/homelab-game/backend/internal/game/engine"
 )
 
@@ -42,8 +44,12 @@ func main() {
 	gameEngine := engine.New()
 	wsHub := ws.NewHub()
 
+	bitcoinQueries := queries.NewBitcoinQueries(pool)
+	bitcoinStore := &bitcoinStoreAdapter{q: bitcoinQueries}
+	bitcoinService := bitcoin.NewPriceService(bitcoinStore, bitcoin.DefaultPriceConfig())
+
 	authHandler := handlers.NewAuthHandler(userQueries, gameStateQueries, cfg.JWTSecret)
-	gameHandler := handlers.NewGameHandler(gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, gameEngine, wsHub)
+	gameHandler := handlers.NewGameHandler(gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, gameEngine, wsHub, bitcoinService)
 	socialHandler := handlers.NewSocialHandler(groupQueries, leaderboardQueries, gameStateQueries)
 
 	handler := routes.Setup(authHandler, gameHandler, socialHandler, wsHub, cfg.JWTSecret)
@@ -53,6 +59,46 @@ func main() {
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// bitcoinStoreAdapter adapts queries.BitcoinQueries to the bitcoin.PriceStore interface.
+// BitcoinQueries was built with a different method signature than PriceStore expects,
+// so this adapter bridges the two without modifying either package.
+type bitcoinStoreAdapter struct {
+	q *queries.BitcoinQueries
+}
+
+func (a *bitcoinStoreAdapter) GetPrice(ctx context.Context) (*bitcoin.PriceState, error) {
+	bp, err := a.q.GetPrice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &bitcoin.PriceState{
+		CurrentPrice: bp.CurrentPrice,
+		Seed:         bp.Seed,
+		LastStepAt:   bp.LastStepAt,
+		UpdatedAt:    bp.UpdatedAt,
+	}, nil
+}
+
+func (a *bitcoinStoreAdapter) UpdatePrice(ctx context.Context, state *bitcoin.PriceState) error {
+	return a.q.UpdatePrice(ctx, state.CurrentPrice, state.Seed, state.LastStepAt)
+}
+
+func (a *bitcoinStoreAdapter) InsertPriceHistory(ctx context.Context, point bitcoin.PricePoint) error {
+	return a.q.InsertPriceHistory(ctx, point.Time, point.Price)
+}
+
+func (a *bitcoinStoreAdapter) GetPriceHistory(ctx context.Context, limit int) ([]bitcoin.PricePoint, error) {
+	history, err := a.q.GetPriceHistory(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	points := make([]bitcoin.PricePoint, len(history))
+	for i, h := range history {
+		points[i] = bitcoin.PricePoint{Time: h.Time, Price: h.Price}
+	}
+	return points, nil
 }
 
 // loadEnvFile reads a .env file from the working directory if present.

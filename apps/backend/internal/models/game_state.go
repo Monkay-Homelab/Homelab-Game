@@ -43,6 +43,7 @@ type GameState struct {
 	DatacenterLevel          int       `json:"datacenter_level"`
 	DatacenterIncomeMultiplier float64   `json:"datacenter_income_multiplier"`
 	TotalDonatedCU             int64     `json:"total_donated_cu"`
+	BitcoinBalance             int64     `json:"bitcoin_balance"`
 	LastCustomerGrowthAt       time.Time `json:"last_customer_growth_at"`
 	LastTickAt                 time.Time `json:"last_tick_at"`
 	CreatedAt       time.Time `json:"created_at"`

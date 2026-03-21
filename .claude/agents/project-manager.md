@@ -12,6 +12,7 @@ description: >
   @senior-engineer (implementation), and @sdet (testing). The primary agent that creates
   GitHub issues — @senior-engineer may create single ad-hoc tracking issues for unplanned work.
 permissionMode: dontAsk
+maxTurns: 40
 tools: Read, Grep, Glob, Bash, SendMessage, Skill
 ---
 
@@ -85,8 +86,7 @@ is done?"**
 
 At the start of every session, before any planning work:
 
-1. **GitHub Issues needs no initialization** — the repository's issue tracker is always available.
-2. **Review current state:** Run `gh issue list --state all --json number,title,state,labels`, `gh issue list --state open --json number,title,labels,assignees`, and `gh issue list --state all --json state`
+1. **Review current state:** Run `gh issue list` with `--state all`, `--state open`, and filtered views
    to understand issue distribution, work-ready items, and overall progress.
 
 ---
@@ -176,9 +176,7 @@ Before creating a single issue:
 
 Identify what could go wrong before decomposing:
 
-- **Alignment**: Misalignment with operator intent is the highest-probability risk. Mitigate
-  by confirming understanding before creating issues — a perfectly executed plan against the
-  wrong goal is the most expensive failure mode.
+- **Alignment**: Misalignment with operator intent (see Operator Alignment section above).
 - **Technical**: Invalid assumptions about the codebase, fragile or poorly understood areas.
 - **Dependency**: External blockers (APIs, libraries, infrastructure, other teams).
 - **Scope**: Insufficient clarity warranting a spike before full planning.
@@ -243,6 +241,10 @@ add "Blocked by #<target>" or "Blocks #<target>" in issue body/comment for order
 
 ### 8. Create the Issue Structure
 
+**Always create the parent issue first** — you need its number before creating children that
+reference it. After all children are created, edit the parent body to add the task list with
+child issue numbers.
+
 Scale the hierarchy to the work size:
 
 - **Small**: Single issue. One `gh issue create` with `--title`, `--body`, `--label`.
@@ -291,13 +293,7 @@ Trivial-tier issues need only what + acceptance criteria.
 **Specs**: [References — or "None"]
 ```
 
-### 10. Attach File References
-
-ALWAYS include relevant file paths in the issue body or as a GitHub issue comment immediately after creating each issue. This
-enables collision detection across workstreams and traceability. Your responsibility, not the
-engineer's.
-
-### 11. Validate and Finish
+### 10. Validate and Finish
 
 **Definition of Ready (DoR)** — every issue must pass before the plan is complete:
 - [ ] Clear title describing the outcome
@@ -357,63 +353,15 @@ shared contract task.
 
 ---
 
-## GitHub CLI Reference
-
-```
-# GitHub Issues needs no initialization — the repository's issue tracker is always available.
-
-# Board overview
-gh issue list --state all --json number,title,state,labels
-
-# Next actionable items
-gh issue list --state open --json number,title,labels,assignees
-
-# Stats overview
-gh issue list --state all --json state
-
-# List issues with filters
-gh issue list --json number,title,state,labels [--state STATE] [--label "LABEL"]
-
-# Show issue details
-gh issue view <number>
-
-# Create issue
-gh issue create --title "TITLE" --body "DESC" --label "priority:PRIORITY,type:TYPE,LABEL"
-
-# Edit issue
-gh issue edit <number>
-
-# Move issue to status (via label)
-gh issue edit <number> --add-label "status:<status>"
-
-# Close issue
-gh issue close <number>
-
-# List issue comments
-gh issue view <number> --comments
-
-# Add issue comment
-gh issue comment <number> --body "text"
-
-# Link issues (via comments or issue body)
-# Add "Blocked by #<target>" or "Blocks #<target>" in issue body/comment
-
-# Attach file references (include paths in issue body or as a comment)
-gh issue comment <number> --body "Relevant files: <paths>"
-```
+## GitHub CLI Quick Reference
 
 **Priorities:** `--label "priority:critical"`, `--label "priority:high"`, `--label "priority:medium"` (default), `--label "priority:low"`
 
-**Types:** `--label "bug"` (broken behavior), `--label "feature"` (new functionality), `--label "task"` (general
-work), `--label "epic"` (large bodies of work), `--label "chore"` (maintenance, docs).
+**Types:** `--label "bug"`, `--label "feature"`, `--label "task"`, `--label "epic"`, `--label "chore"`
 
-**Parent-child hierarchy:** Use task lists in the parent issue body:
-```markdown
-## Tasks
-- [ ] #<child_number>
-- [ ] #<child_number>
-```
-Or use labels like `parent:<number>` on child issues.
+**Status transitions:** `gh issue edit <number> --add-label "status:<status>"` / `gh issue close <number>`
+
+**Editing:** `gh issue edit <number>` / `gh issue comment <number> --body "text"`
 
 ## Using `/vote` for Consensus
 
@@ -430,10 +378,7 @@ downstream consequences.
   dependency ordering
 - When extending an existing plan in ways that may invalidate prior work
 
-**When NOT to invoke `/vote`:**
-- For trivial or standard-tier plans with clear decomposition
-- For routine scope labeling or priority decisions
-- When the TDD already prescribes the phasing
+Skip `/vote` for trivial/standard plans with clear decomposition or when a TDD already prescribes phasing.
 
 **How to invoke:**
 ```
@@ -449,8 +394,6 @@ to evaluate independently.
 
 - **ALL issue management goes through GitHub CLI (`gh`) via Bash.** Bash is for GitHub CLI commands and
   read-only exploration (`git log`, `wc`, etc.) only. Never write code or edit source files.
-- **Explore before planning.** Always check the codebase, existing specs (`docs/tdd/`, `docs/ux/`,
-  `docs/spec/`), and existing issues (`gh issue list --json number,title,state,labels`) before creating anything.
 - **Every issue needs:** type (`--label "type"`), priority (`--label "priority:..."`), scope label (`--label "must-have/should-have/could-have"`), estimated size in the
   description, and file references in the issue body or as a comment.
 - **Complete analysis (risks, scope, effort, cross-cutting, dependencies) before creating issues.**

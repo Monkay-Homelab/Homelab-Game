@@ -11,10 +11,11 @@ import { UpgradePanel } from './components/UpgradePanel';
 import { SaasPanel } from './components/SaasPanel';
 import { DatacenterPanel } from './components/DatacenterPanel';
 import { SocialPanel } from './components/SocialPanel';
+import { MarketPanel } from './components/MarketPanel';
 import { EventLog } from './components/EventLog';
 import { useWebSocket } from './hooks/useWebSocket';
 
-type Tab = 'hardware' | 'services' | 'upgrades' | 'saas' | 'datacenter' | 'social';
+type Tab = 'hardware' | 'services' | 'upgrades' | 'saas' | 'datacenter' | 'social' | 'market';
 
 const TABS: { id: Tab; label: string; icon: string; color: string }[] = [
   { id: 'hardware', label: 'Hardware', icon: '[ ]', color: 'var(--accent-purple)' },
@@ -22,6 +23,7 @@ const TABS: { id: Tab; label: string; icon: string; color: string }[] = [
   { id: 'upgrades', label: 'Upgrades', icon: ' ^ ', color: 'var(--accent-green)' },
   { id: 'saas', label: 'SaaS', icon: ' $ ', color: 'var(--accent-amber)' },
   { id: 'datacenter', label: 'Datacenter', icon: ' # ', color: 'var(--accent-cyan)' },
+  { id: 'market', label: 'Market', icon: ' B ', color: 'var(--accent-amber)' },
   { id: 'social', label: 'Social', icon: ' @ ', color: '#22c55e' },
 ];
 
@@ -104,7 +106,7 @@ export function App() {
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Tab Bar */}
           <div className="shrink-0 flex gap-1 mb-3">
-            {TABS.map(tab => {
+            {TABS.filter(tab => tab.id !== 'market' || state.money > 0 || state.bitcoin_balance > 0).map(tab => {
               const isActive = activeTab === tab.id;
               return (
                 <button
@@ -131,6 +133,7 @@ export function App() {
             {activeTab === 'upgrades' && <UpgradePanel state={state} />}
             {activeTab === 'saas' && <SaasPanel state={state} />}
             {activeTab === 'datacenter' && <DatacenterPanel state={state} />}
+            {activeTab === 'market' && <MarketPanel state={state} />}
             {activeTab === 'social' && <SocialPanel />}
           </div>
         </div>

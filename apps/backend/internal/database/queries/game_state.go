@@ -21,7 +21,7 @@ const gsColumns = `id, user_id, tier, compute_units, reputation, power_watts, po
 	network_tier, automation_tier, knowledge_points, idle_multiplier,
 	saas_unlocked, total_customers, throttle_multiplier, throttle_ticks_remaining,
 	datacenter_tier, owns_datacenter, datacenter_level, datacenter_income_multiplier,
-	total_donated_cu, last_customer_growth_at, last_tick_at, created_at, updated_at`
+	total_donated_cu, bitcoin_balance, last_customer_growth_at, last_tick_at, created_at, updated_at`
 
 func scanGS(dest ...any) []any { return dest }
 
@@ -33,7 +33,7 @@ func gsFields(gs *models.GameState) []any {
 		&gs.KnowledgePoints, &gs.IdleMultiplier, &gs.SaasUnlocked, &gs.TotalCustomers,
 		&gs.ThrottleMultiplier, &gs.ThrottleTicksRemaining, &gs.DatacenterTier,
 		&gs.OwnsDatacenter, &gs.DatacenterLevel, &gs.DatacenterIncomeMultiplier,
-		&gs.TotalDonatedCU, &gs.LastCustomerGrowthAt, &gs.LastTickAt, &gs.CreatedAt, &gs.UpdatedAt)
+		&gs.TotalDonatedCU, &gs.BitcoinBalance, &gs.LastCustomerGrowthAt, &gs.LastTickAt, &gs.CreatedAt, &gs.UpdatedAt)
 }
 
 func (q *GameStateQueries) Create(ctx context.Context, userID string) (*models.GameState, error) {
@@ -71,9 +71,9 @@ func (q *GameStateQueries) Update(ctx context.Context, gs *models.GameState) err
 		    throttle_multiplier = $22, throttle_ticks_remaining = $23,
 		    datacenter_tier = $24, owns_datacenter = $25, datacenter_level = $26,
 		    datacenter_income_multiplier = $27, total_donated_cu = $28,
-		    last_customer_growth_at = $29,
-		    last_tick_at = $30, updated_at = NOW()
-		 WHERE id = $1 AND user_id = $31`,
+		    bitcoin_balance = $29, last_customer_growth_at = $30,
+		    last_tick_at = $31, updated_at = NOW()
+		 WHERE id = $1 AND user_id = $32`,
 		gs.ID, gs.Tier, gs.ComputeUnits, gs.Reputation, gs.PowerWatts,
 		gs.PowerLimit, gs.Money, gs.HardwareSlots, gs.UsedSlots,
 		gs.RackUnits, gs.UsedRackUnits, gs.ColoCount, gs.ColoMultiplier,
@@ -81,7 +81,7 @@ func (q *GameStateQueries) Update(ctx context.Context, gs *models.GameState) err
 		gs.KnowledgePoints, gs.IdleMultiplier, gs.SaasUnlocked, gs.TotalCustomers,
 		gs.ThrottleMultiplier, gs.ThrottleTicksRemaining, gs.DatacenterTier,
 		gs.OwnsDatacenter, gs.DatacenterLevel, gs.DatacenterIncomeMultiplier,
-		gs.TotalDonatedCU, gs.LastCustomerGrowthAt, gs.LastTickAt, gs.UserID)
+		gs.TotalDonatedCU, gs.BitcoinBalance, gs.LastCustomerGrowthAt, gs.LastTickAt, gs.UserID)
 	return err
 }
 

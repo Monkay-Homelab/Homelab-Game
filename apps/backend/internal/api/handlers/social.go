@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/homelab-game/backend/internal/api/middleware"
@@ -234,12 +235,24 @@ func (h *SocialHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if category == "group" {
-		entries, _ := h.leaderboard.GetTopGroups(r.Context(), 50)
+		entries, err := h.leaderboard.GetTopGroups(r.Context(), 50)
+		if err != nil {
+			log.Printf("leaderboard query error (group): %v", err)
+		}
+		if entries == nil {
+			entries = []models.LeaderboardEntry{}
+		}
 		json.NewEncoder(w).Encode(map[string]any{"category": category, "entries": entries})
 		return
 	}
 
-	entries, _ := h.leaderboard.GetTopByCategory(r.Context(), category, 50)
+	entries, err := h.leaderboard.GetTopByCategory(r.Context(), category, 50)
+	if err != nil {
+		log.Printf("leaderboard query error (%s): %v", category, err)
+	}
+	if entries == nil {
+		entries = []models.LeaderboardEntry{}
+	}
 	json.NewEncoder(w).Encode(map[string]any{"category": category, "entries": entries})
 }
 
@@ -258,6 +271,7 @@ func (h *SocialHandler) UpdateLeaderboards(w http.ResponseWriter, r *http.Reques
 	h.leaderboard.UpdateScore(r.Context(), userID, "reputation", gs.Reputation)
 	h.leaderboard.UpdateScore(r.Context(), userID, "colo_count", int64(gs.ColoCount))
 	h.leaderboard.UpdateScore(r.Context(), userID, "money", gs.Money)
+	h.leaderboard.UpdateScore(r.Context(), userID, "bitcoin_balance", gs.BitcoinBalance)
 
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }

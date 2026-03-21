@@ -21,6 +21,7 @@ export function CurrencyBar({ state }: { state: GameState }) {
       <Stat label="REP" value={formatNumber(Math.floor(currencies.reputation))} color="var(--accent-blue)" />
       <Stat label="PWR" value={`${state.power_watts}/${state.power_limit}W`} color="var(--accent-purple)" />
       {currencies.money > 0 && <Stat label="USD" value={`$${formatNumber(Math.floor(currencies.money))}`} color="var(--accent-green)" />}
+      {state.bitcoin_balance > 0 && <Stat label="BTC" value={`${state.bitcoin_balance} ($${formatNumber(state.bitcoin_balance * state.bitcoin_price)})`} color="var(--accent-amber)" />}
       <Stat
         label={isRack ? 'RACK' : 'SLOTS'}
         value={isRack ? `${state.used_rack_units}/${state.rack_units}U` : `${state.used_slots}/${state.hardware_slots}`}

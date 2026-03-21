@@ -73,6 +73,14 @@ export interface GameState {
   group_bonus: number;
   group_members: number;
   global_donated_cu: number;
+  bitcoin_balance: number;
+  bitcoin_price: number;
+  bitcoin_price_history: BitcoinPricePoint[];
+}
+
+export interface BitcoinPricePoint {
+  time: string;
+  price: number;
 }
 
 export interface ColoRackItem {
@@ -201,6 +209,14 @@ export interface GameConfig {
   gameplay: GameplayConfig;
   leaderboard: LeaderboardConfig;
   group: GroupConfig;
+  bitcoin: BitcoinConfig;
+}
+
+export interface BitcoinConfig {
+  min_price: number;
+  max_price: number;
+  step_interval: number;
+  mean_price: number;
 }
 
 export interface TierConfig {

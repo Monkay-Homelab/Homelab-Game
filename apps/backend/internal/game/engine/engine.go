@@ -230,7 +230,8 @@ func countShelfCapacity(hardware []models.Hardware) int {
 }
 
 // ProcessAction validates and applies a player action.
-func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload json.RawMessage, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, compUpgrades []models.ComponentUpgrade) (*ActionResult, error) {
+// currentBitcoinPrice is the server-resolved Bitcoin price; only used by buy_bitcoin/sell_bitcoin actions (0 for all others).
+func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload json.RawMessage, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, compUpgrades []models.ComponentUpgrade, currentBitcoinPrice int64) (*ActionResult, error) {
 	switch actionType {
 	case "run_job":
 		return e.runJob(gs)
@@ -268,6 +269,10 @@ func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload 
 		return e.buildDatacenter(gs)
 	case "upgrade_datacenter":
 		return e.upgradeDatacenter(gs)
+	case "buy_bitcoin":
+		return e.buyBitcoin(gs, payload, currentBitcoinPrice)
+	case "sell_bitcoin":
+		return e.sellBitcoin(gs, payload, currentBitcoinPrice)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", actionType)
 	}
@@ -790,6 +795,7 @@ func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, serv
 	gs.AutomationTier = 0
 	gs.IdleMultiplier = 1.0
 	// Keep: KnowledgePoints (persistent)
+	// Keep: BitcoinBalance (persistent cross-prestige asset)
 	gs.SaasUnlocked = false
 	gs.TotalCustomers = 0
 	gs.ThrottleMultiplier = 1.0
@@ -991,6 +997,67 @@ func (e *Engine) upgradeDatacenter(gs *models.GameState) (*ActionResult, error) 
 	gs.DatacenterLevel++
 	// Each level adds 0.25x to the income multiplier (base 1.25 so level 1 = 1.5x matches build)
 	gs.DatacenterIncomeMultiplier = 1.25 + float64(gs.DatacenterLevel)*0.25
+
+	return &ActionResult{}, nil
+}
+
+type bitcoinPayload struct {
+	Amount int64 `json:"amount"`
+}
+
+func (e *Engine) buyBitcoin(gs *models.GameState, payload json.RawMessage, currentBitcoinPrice int64) (*ActionResult, error) {
+	if currentBitcoinPrice <= 0 {
+		return nil, fmt.Errorf("bitcoin market unavailable")
+	}
+
+	var p bitcoinPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("invalid payload")
+	}
+	if p.Amount < 1 {
+		return nil, fmt.Errorf("amount must be positive")
+	}
+
+	// Overflow guard: reject if multiplication would overflow int64
+	if p.Amount > math.MaxInt64/currentBitcoinPrice {
+		return nil, fmt.Errorf("amount too large")
+	}
+
+	totalCost := p.Amount * currentBitcoinPrice
+	if gs.Money < totalCost {
+		return nil, fmt.Errorf("not enough money (need $%d, have $%d)", totalCost, gs.Money)
+	}
+
+	gs.Money -= totalCost
+	gs.BitcoinBalance += p.Amount
+
+	return &ActionResult{}, nil
+}
+
+func (e *Engine) sellBitcoin(gs *models.GameState, payload json.RawMessage, currentBitcoinPrice int64) (*ActionResult, error) {
+	if currentBitcoinPrice <= 0 {
+		return nil, fmt.Errorf("bitcoin market unavailable")
+	}
+
+	var p bitcoinPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("invalid payload")
+	}
+	if p.Amount < 1 {
+		return nil, fmt.Errorf("amount must be positive")
+	}
+
+	if gs.BitcoinBalance < p.Amount {
+		return nil, fmt.Errorf("not enough bitcoin (need %d, have %d)", p.Amount, gs.BitcoinBalance)
+	}
+
+	// Overflow guard: reject if multiplication would overflow int64
+	if p.Amount > math.MaxInt64/currentBitcoinPrice {
+		return nil, fmt.Errorf("amount too large")
+	}
+
+	gs.BitcoinBalance -= p.Amount
+	gs.Money += p.Amount * currentBitcoinPrice
 
 	return &ActionResult{}, nil
 }

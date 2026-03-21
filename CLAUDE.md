@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Homelab the Game — an AFK/clicker simulation game where players build and manage a homelab, progressing from a server on a coffee table to colocating racks in datacenters. Server-authoritative multiplayer game with ads, IAP, groups, and leaderboards.
 
-See .documents/PLAN.md for full game design and .documents/ROADMAP.md for implementation phases.
+See docs/PLAN.md for full game design and docs/ROADMAP.md for implementation phases.
 
 ## Architecture
 

@@ -159,9 +159,9 @@ All agents use GitHub Issues via `gh` CLI for issue tracking and coordination.
 
 ## Documentation
 
-- **[GAME-MECHANICS.md](.documents/GAME-MECHANICS.md)** — Complete game mechanics reference with formulas, catalogs, and balance data
-- **[PLAN.md](.documents/PLAN.md)** — Full game design document
-- **[ROADMAP.md](.documents/ROADMAP.md)** — Implementation phases
+- **[GAME-MECHANICS.md](docs/GAME-MECHANICS.md)** — Complete game mechanics reference with formulas, catalogs, and balance data
+- **[PLAN.md](docs/PLAN.md)** — Full game design document
+- **[ROADMAP.md](docs/ROADMAP.md)** — Implementation phases
 
 ## License
 

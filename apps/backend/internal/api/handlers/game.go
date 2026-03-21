@@ -11,6 +11,7 @@ import (
 	"github.com/homelab-game/backend/internal/api/middleware"
 	"github.com/homelab-game/backend/internal/api/ws"
 	"github.com/homelab-game/backend/internal/database/queries"
+	"github.com/homelab-game/backend/internal/game/bitcoin"
 	"github.com/homelab-game/backend/internal/game/catalog"
 	"github.com/homelab-game/backend/internal/game/engine"
 	"github.com/homelab-game/backend/internal/game/events"
@@ -60,6 +61,7 @@ type GameHandler struct {
 	engine     *engine.Engine
 	hub        *ws.Hub
 	userLocks  *userMutexMap
+	bitcoinSvc *bitcoin.PriceService
 }
 
 func NewGameHandler(
@@ -74,47 +76,52 @@ func NewGameHandler(
 	groups *queries.GroupQueries,
 	eng *engine.Engine,
 	hub *ws.Hub,
+	bitcoinSvc *bitcoin.PriceService,
 ) *GameHandler {
-	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub, userLocks: newUserMutexMap()}
+	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub, userLocks: newUserMutexMap(), bitcoinSvc: bitcoinSvc}
 }
 
 type fullStateResponse struct {
 	*models.GameState
-	Hardware           []models.Hardware            `json:"hardware"`
-	Services           []models.Service             `json:"services"`
-	Upgrades           []models.Upgrade             `json:"upgrades"`
-	ComponentUpgrades  []models.ComponentUpgrade    `json:"component_upgrades"`
-	Customers          []models.Customer            `json:"customers"`
-	Expenses           []models.Expense             `json:"expenses"`
-	ColoRacks          []models.ColoRack            `json:"colo_racks"`
-	Events             []*events.GameEvent          `json:"events,omitempty"`
-	AvailableHardware  []catalog.HardwareTemplate   `json:"available_hardware"`
-	AvailableServices  []catalog.ServiceTemplate    `json:"available_services"`
-	AvailableUpgrades  []catalog.UpgradeTemplate    `json:"available_upgrades"`
-	AvailableSaas      []catalog.SaasServiceTemplate `json:"available_saas,omitempty"`
-	Overheating        bool                         `json:"overheating"`
-	Throttled          bool                         `json:"throttled"`
-	GroupBonus         float64                      `json:"group_bonus"`
-	GroupMembers       int                          `json:"group_members"`
-	GlobalDonatedCU    int64                        `json:"global_donated_cu"`
+	Hardware            []models.Hardware            `json:"hardware"`
+	Services            []models.Service             `json:"services"`
+	Upgrades            []models.Upgrade             `json:"upgrades"`
+	ComponentUpgrades   []models.ComponentUpgrade    `json:"component_upgrades"`
+	Customers           []models.Customer            `json:"customers"`
+	Expenses            []models.Expense             `json:"expenses"`
+	ColoRacks           []models.ColoRack            `json:"colo_racks"`
+	Events              []*events.GameEvent          `json:"events,omitempty"`
+	AvailableHardware   []catalog.HardwareTemplate   `json:"available_hardware"`
+	AvailableServices   []catalog.ServiceTemplate    `json:"available_services"`
+	AvailableUpgrades   []catalog.UpgradeTemplate    `json:"available_upgrades"`
+	AvailableSaas       []catalog.SaasServiceTemplate `json:"available_saas,omitempty"`
+	Overheating         bool                         `json:"overheating"`
+	Throttled           bool                         `json:"throttled"`
+	GroupBonus          float64                      `json:"group_bonus"`
+	GroupMembers        int                          `json:"group_members"`
+	GlobalDonatedCU     int64                        `json:"global_donated_cu"`
+	BitcoinPrice        int64                        `json:"bitcoin_price"`
+	BitcoinPriceHistory []models.BitcoinPricePoint   `json:"bitcoin_price_history"`
 }
 
-func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, svcs []models.Service, ups []models.Upgrade, compUps []models.ComponentUpgrade, custs []models.Customer, exps []models.Expense, colos []models.ColoRack, evts []*events.GameEvent) fullStateResponse {
+func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, svcs []models.Service, ups []models.Upgrade, compUps []models.ComponentUpgrade, custs []models.Customer, exps []models.Expense, colos []models.ColoRack, evts []*events.GameEvent, btcPrice int64, btcHistory []models.BitcoinPricePoint) fullStateResponse {
 	resp := fullStateResponse{
-		GameState:         gs,
-		Hardware:          hw,
-		Services:          svcs,
-		Upgrades:          ups,
-		ComponentUpgrades: compUps,
-		Customers:         custs,
-		Expenses:          exps,
-		ColoRacks:         colos,
-		Events:            evts,
-		AvailableHardware: catalog.GetAvailableHardware(gs.Tier),
-		AvailableServices: catalog.GetAvailableServices(gs.Tier),
-		AvailableUpgrades: catalog.GetAvailableUpgrades(gs.Tier),
-		Overheating:       gs.HeatGenerated > gs.CoolingCapacity,
-		Throttled:         gs.ThrottleTicksRemaining > 0,
+		GameState:           gs,
+		Hardware:            hw,
+		Services:            svcs,
+		Upgrades:            ups,
+		ComponentUpgrades:   compUps,
+		Customers:           custs,
+		Expenses:            exps,
+		ColoRacks:           colos,
+		Events:              evts,
+		AvailableHardware:   catalog.GetAvailableHardware(gs.Tier),
+		AvailableServices:   catalog.GetAvailableServices(gs.Tier),
+		AvailableUpgrades:   catalog.GetAvailableUpgrades(gs.Tier),
+		Overheating:         gs.HeatGenerated > gs.CoolingCapacity,
+		Throttled:           gs.ThrottleTicksRemaining > 0,
+		BitcoinPrice:        btcPrice,
+		BitcoinPriceHistory: btcHistory,
 	}
 	if gs.SaasUnlocked {
 		resp.AvailableSaas = catalog.GetAvailableSaasServices(gs.Tier)
@@ -224,6 +231,31 @@ func (h *GameHandler) processCustomerGrowth(ctx context.Context, gs *models.Game
 	return custs, svcs
 }
 
+// fetchBitcoinData retrieves the current price and recent history from the bitcoin PriceService,
+// converting bitcoin.PricePoint to models.BitcoinPricePoint for the response.
+func (h *GameHandler) fetchBitcoinData(ctx context.Context, now time.Time) (int64, []models.BitcoinPricePoint) {
+	if h.bitcoinSvc == nil {
+		return 0, nil
+	}
+
+	price, err := h.bitcoinSvc.GetCurrentPrice(ctx, now)
+	if err != nil {
+		price = 0
+	}
+
+	points, err := h.bitcoinSvc.GetPriceHistory(ctx, 100)
+	if err != nil {
+		points = nil
+	}
+
+	history := make([]models.BitcoinPricePoint, len(points))
+	for i, p := range points {
+		history[i] = models.BitcoinPricePoint{Time: p.Time, Price: p.Price}
+	}
+
+	return price, history
+}
+
 func (h *GameHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	cfg := engine.GetConfig()
@@ -303,7 +335,10 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		h.pushEvents(userID, triggered)
 	}
 
-	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered)
+	// Fetch current bitcoin price and history for the response
+	btcPrice, btcHistory := h.fetchBitcoinData(r.Context(), now)
+
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, btcPrice, btcHistory)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
 	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())
@@ -384,7 +419,17 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		custs, svcs = h.processCustomerGrowth(r.Context(), gs, custs, svcs, now)
 	}
 
-	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps)
+	// Only resolve bitcoin price for buy/sell actions to avoid unnecessary mutex contention
+	var currentBitcoinPrice int64
+	if req.Type == "buy_bitcoin" || req.Type == "sell_bitcoin" {
+		if h.bitcoinSvc != nil {
+			if p, err := h.bitcoinSvc.GetCurrentPrice(r.Context(), now); err == nil {
+				currentBitcoinPrice = p
+			}
+		}
+	}
+
+	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps, currentBitcoinPrice)
 	if err != nil {
 		errMsg, _ := json.Marshal(map[string]string{"error": err.Error()})
 		http.Error(w, string(errMsg), http.StatusBadRequest)
@@ -524,7 +569,18 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		h.pushEvents(userID, triggered)
 	}
 
-	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered)
+	// Fetch bitcoin price history for the response (price already resolved above)
+	var btcHistory []models.BitcoinPricePoint
+	if h.bitcoinSvc != nil {
+		if points, err := h.bitcoinSvc.GetPriceHistory(r.Context(), 100); err == nil {
+			btcHistory = make([]models.BitcoinPricePoint, len(points))
+			for i, p := range points {
+				btcHistory[i] = models.BitcoinPricePoint{Time: p.Time, Price: p.Price}
+			}
+		}
+	}
+
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, currentBitcoinPrice, btcHistory)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
 	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())

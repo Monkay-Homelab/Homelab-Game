@@ -191,7 +191,7 @@ export function SocialPanel() {
           {/* Category selector */}
           <div className="w-48 shrink-0 panel p-4 flex flex-col min-h-0">
             <h3 className="text-sm font-semibold mb-3 shrink-0" style={{ color: '#f59e0b' }}>Categories</h3>
-            <div className="space-y-1">
+            <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
               {LB_CATEGORIES.map(cat => (
                 <button
                   key={cat.id}

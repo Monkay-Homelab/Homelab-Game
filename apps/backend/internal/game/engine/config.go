@@ -37,6 +37,7 @@ type GameConfig struct {
 	Gameplay        GameplayConfig      `json:"gameplay"`
 	Leaderboard     LeaderboardConfig   `json:"leaderboard"`
 	Group           GroupConfig         `json:"group"`
+	Bitcoin         BitcoinConfig       `json:"bitcoin"`
 }
 
 type TierConfig struct {
@@ -105,6 +106,13 @@ type GroupConfig struct {
 	BonusPerMember float64 `json:"bonus_per_member"`
 	MaxBonus       float64 `json:"max_bonus"`
 	Description    string  `json:"description"`
+}
+
+type BitcoinConfig struct {
+	MinPrice     int64 `json:"min_price"`
+	MaxPrice     int64 `json:"max_price"`
+	StepInterval int   `json:"step_interval"`
+	MeanPrice    int64 `json:"mean_price"`
 }
 
 // Tier metadata including labels and flavor text
@@ -203,13 +211,20 @@ func GetConfig() *GameConfig {
 				{ID: "colo_count", Label: "Prestiges"},
 				{ID: "money", Label: "Money"},
 				{ID: "donated_cu", Label: "Donated CU"},
-			{ID: "group", Label: "Groups"},
+				{ID: "bitcoin_balance", Label: "Bitcoin"},
+				{ID: "group", Label: "Groups"},
 			},
 		},
 		Group: GroupConfig{
 			BonusPerMember: 0.05,
 			MaxBonus:       0.50,
 			Description:    "+5% compute bonus per member, up to +50%.",
+		},
+		Bitcoin: BitcoinConfig{
+			MinPrice:     1000,
+			MaxPrice:     50000,
+			StepInterval: 30,
+			MeanPrice:    10000,
 		},
 	}
 }

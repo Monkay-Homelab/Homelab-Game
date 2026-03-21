@@ -68,13 +68,14 @@ func (q *LeaderboardQueries) GetTopByCategory(ctx context.Context, category stri
 	var column string
 	// Whitelist categories — never use user input directly in SQL
 	allowed := map[string]string{
-		"compute":    "gs.compute_units",
-		"reputation": "gs.reputation",
-		"colo_count": "gs.colo_count",
-		"money":      "gs.money",
-		"donated_cu": "gs.total_donated_cu",
-		"services":   "(SELECT COUNT(*) FROM services s WHERE s.game_state_id = gs.id)",
-		"prestige":   "gs.colo_count",
+		"compute":         "gs.compute_units",
+		"reputation":      "gs.reputation",
+		"colo_count":      "gs.colo_count",
+		"money":           "gs.money",
+		"donated_cu":      "gs.total_donated_cu",
+		"services":        "(SELECT COUNT(*) FROM services s WHERE s.game_state_id = gs.id)",
+		"prestige":        "gs.colo_count",
+		"bitcoin_balance": "gs.bitcoin_balance",
 	}
 	column, ok := allowed[category]
 	if !ok {
@@ -86,6 +87,7 @@ func (q *LeaderboardQueries) GetTopByCategory(ctx context.Context, category stri
 	          ROW_NUMBER() OVER (ORDER BY ` + column + ` DESC) as rank
 	          FROM game_states gs
 	          JOIN users u ON u.id = gs.user_id
+	          WHERE ` + column + ` > 0
 	          ORDER BY ` + column + ` DESC
 	          LIMIT $1`
 
