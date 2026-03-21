@@ -52,6 +52,13 @@ func main() {
 	gameHandler := handlers.NewGameHandler(gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, gameEngine, wsHub, bitcoinService)
 	socialHandler := handlers.NewSocialHandler(groupQueries, leaderboardQueries, gameStateQueries)
 
+	// Wire hub lifecycle callbacks to GameHandler so that WebSocket
+	// connect/disconnect events start and stop per-user tick goroutines.
+	// This must happen before routes.Setup, which registers the /ws
+	// endpoint that begins accepting connections.
+	wsHub.OnConnect = gameHandler.OnConnect
+	wsHub.OnDisconnect = gameHandler.OnDisconnect
+
 	handler := routes.Setup(authHandler, gameHandler, socialHandler, wsHub, cfg.JWTSecret)
 
 	addr := ":" + cfg.Port

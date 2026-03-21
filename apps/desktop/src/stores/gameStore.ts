@@ -43,15 +43,10 @@ interface GameStore {
   upgradeDatacenter: () => Promise<void>;
   buyBitcoin: (amount: number) => Promise<void>;
   sellBitcoin: (amount: number) => Promise<void>;
+  setStateFromPush: (state: GameState) => void;
   addEvent: (event: GameEvent) => void;
   dismissEvent: (index: number) => void;
 }
-
-// Timestamp of the last action response to prevent stale poll data from overwriting it.
-// When an action (buy_bitcoin, etc.) completes and sets state, the 5-second fetchState poll
-// may return data from BEFORE the action was processed (request overlap). This guard ensures
-// poll responses arriving within a short window after an action are discarded.
-let _lastActionAt = 0;
 
 export const useGameStore = create<GameStore>((set, get) => ({
   state: null,
@@ -105,13 +100,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   fetchState: async () => {
     try {
-      const requestedAt = Date.now();
       const state = await api.getState();
-      // If an action completed while this poll was in-flight, discard the stale poll response.
-      // The action response already set the authoritative state.
-      if (_lastActionAt > requestedAt) {
-        return;
-      }
       set({ state, error: null });
     } catch (e) {
       const msg = (e as Error).message;
@@ -136,7 +125,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     try {
       const state = await api.action('run_job');
-      _lastActionAt = Date.now();
       set({ state, error: null });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -147,7 +135,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('buy_hardware', { name });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -158,7 +145,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('sell_hardware', { id });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -169,7 +155,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('deploy_service', { name });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -180,7 +165,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('bulk_deploy_services');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -191,7 +175,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('buy_upgrade', { name });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -202,7 +185,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('bulk_buy_upgrades', type ? { type } : {});
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -213,7 +195,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('upgrade_component', { hardware_id: hardwareId, component });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -224,7 +205,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('bulk_upgrade_components');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -235,7 +215,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('resolve_event');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -246,7 +225,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('unlock_saas');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -257,7 +235,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('deploy_saas', { name });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -268,7 +245,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('bulk_deploy_saas');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -279,7 +255,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('upgrade_tier');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -290,7 +265,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('colo');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -301,7 +275,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('donate_cu', { amount });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -312,7 +285,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('build_datacenter');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -323,7 +295,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('upgrade_datacenter');
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -334,7 +305,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('buy_bitcoin', { amount });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -345,11 +315,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
     try {
       const state = await api.action('sell_bitcoin', { amount });
-      _lastActionAt = Date.now();
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
     }
+  },
+
+  setStateFromPush: (state) => {
+    set({ state, error: null });
   },
 
   addEvent: (event) => {

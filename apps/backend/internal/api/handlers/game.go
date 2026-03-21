@@ -3,8 +3,11 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"math"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -48,20 +51,25 @@ func (m *userMutexMap) Unlock(userID string) {
 	}
 }
 
+// defaultTickInterval is the default server-side tick interval for computing
+// idle progress and pushing state over WebSocket.
+const defaultTickInterval = 5 * time.Second
+
 type GameHandler struct {
-	gameState  *queries.GameStateQueries
-	hardware   *queries.HardwareQueries
-	services   *queries.ServiceQueries
-	upgrades   *queries.UpgradeQueries
-	components *queries.ComponentUpgradeQueries
-	customers  *queries.CustomerQueries
-	expenses   *queries.ExpenseQueries
-	coloRacks  *queries.ColoRackQueries
-	groups     *queries.GroupQueries
-	engine     *engine.Engine
-	hub        *ws.Hub
-	userLocks  *userMutexMap
-	bitcoinSvc *bitcoin.PriceService
+	gameState    *queries.GameStateQueries
+	hardware     *queries.HardwareQueries
+	services     *queries.ServiceQueries
+	upgrades     *queries.UpgradeQueries
+	components   *queries.ComponentUpgradeQueries
+	customers    *queries.CustomerQueries
+	expenses     *queries.ExpenseQueries
+	coloRacks    *queries.ColoRackQueries
+	groups       *queries.GroupQueries
+	engine       *engine.Engine
+	hub          *ws.Hub
+	userLocks    *userMutexMap
+	bitcoinSvc   *bitcoin.PriceService
+	tickInterval time.Duration
 }
 
 func NewGameHandler(
@@ -78,7 +86,13 @@ func NewGameHandler(
 	hub *ws.Hub,
 	bitcoinSvc *bitcoin.PriceService,
 ) *GameHandler {
-	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub, userLocks: newUserMutexMap(), bitcoinSvc: bitcoinSvc}
+	tick := defaultTickInterval
+	if s := os.Getenv("TICK_INTERVAL_SECONDS"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			tick = time.Duration(v) * time.Second
+		}
+	}
+	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub, userLocks: newUserMutexMap(), bitcoinSvc: bitcoinSvc, tickInterval: tick}
 }
 
 type fullStateResponse struct {
@@ -254,6 +268,142 @@ func (h *GameHandler) fetchBitcoinData(ctx context.Context, now time.Time) (int6
 	}
 
 	return price, history
+}
+
+// runUserTick computes idle progress for a single user, persists the updated
+// state, and pushes the full state over WebSocket. It acquires the per-user
+// mutex to prevent concurrent state mutations with PerformAction.
+//
+// Errors are returned to the caller for logging but are not fatal — a failed
+// tick is recovered on the next tick.
+func (h *GameHandler) runUserTick(ctx context.Context, userID string) error {
+	h.userLocks.Lock(userID)
+	defer h.userLocks.Unlock(userID)
+
+	gs, err := h.gameState.GetByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	hw, _ := h.hardware.GetByGameStateID(ctx, gs.ID)
+	svcs, _ := h.services.GetByGameStateID(ctx, gs.ID)
+	ups, _ := h.upgrades.GetByGameStateID(ctx, gs.ID)
+	custs, _ := h.customers.GetByGameStateID(ctx, gs.ID)
+	exps, _ := h.expenses.GetByGameStateID(ctx, gs.ID)
+	colos, _ := h.coloRacks.GetByUserID(ctx, userID)
+	compUps, _ := h.components.GetByGameStateID(ctx, gs.ID)
+
+	now := time.Now()
+	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
+	elapsed := now.Sub(gs.LastTickAt).Seconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, now)
+
+	// Group bonus
+	groupBonus, groupMembers := h.getGroupBonus(ctx, userID)
+
+	// Add colo rack passive income (boosted by datacenter ownership)
+	dcMult := gs.DatacenterIncomeMultiplier
+	if dcMult < 1.0 {
+		dcMult = 1.0
+	}
+	for i, cr := range colos {
+		decay := math.Pow(0.9, float64(i))
+		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * elapsed * dcMult * decay)
+		gs.Reputation += int64(float64(cr.ReputationPerTick) * elapsed * dcMult * decay)
+		gs.Money += int64(float64(cr.MoneyPerTick) * elapsed * dcMult * decay)
+	}
+
+	// Apply group bonus to idle compute earned this tick
+	if groupBonus > 1.0 {
+		var idleCompute int64
+		for _, item := range hw {
+			idleCompute += int64(item.ComputePerTick)
+		}
+		for _, s := range svcs {
+			idleCompute += int64(s.ComputePerTick)
+		}
+		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
+		gs.ComputeUnits += groupExtra
+	}
+
+	// Customer growth for SaaS services
+	if gs.SaasUnlocked {
+		custs, svcs = h.processCustomerGrowth(ctx, gs, custs, svcs, now)
+	}
+
+	if err := h.gameState.Update(ctx, gs); err != nil {
+		return err
+	}
+
+	for i := range custs {
+		h.customers.Update(ctx, &custs[i])
+	}
+
+	if len(triggered) > 0 {
+		h.pushEvents(userID, triggered)
+	}
+
+	// Fetch bitcoin price and history
+	btcPrice, btcHistory := h.fetchBitcoinData(ctx, now)
+
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, btcPrice, btcHistory)
+	resp.GroupBonus = groupBonus
+	resp.GroupMembers = groupMembers
+	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(ctx)
+
+	// Serialize the response and push as a "state" WS message
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	h.hub.SendToUser(userID, ws.Message{
+		Type:    "state",
+		Payload: payload,
+	})
+
+	return nil
+}
+
+// OnConnect is called when a user establishes a WebSocket connection. It spawns
+// a tick goroutine that computes idle progress and pushes state at the
+// configured interval. The goroutine exits when the done channel is closed
+// (client disconnected).
+func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
+	go func() {
+		log.Printf("[tick] goroutine started for user %s (interval=%s)", userID, h.tickInterval)
+		defer log.Printf("[tick] goroutine stopped for user %s", userID)
+
+		ticker := time.NewTicker(h.tickInterval)
+		defer ticker.Stop()
+
+		// Immediate state push on connect (handles reconnection — client
+		// gets state right away without waiting for the first tick).
+		if err := h.runUserTick(context.Background(), userID); err != nil {
+			log.Printf("[tick] initial tick error for user %s: %v", userID, err)
+		}
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := h.runUserTick(context.Background(), userID); err != nil {
+					log.Printf("[tick] error for user %s: %v", userID, err)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+}
+
+// OnDisconnect is called when a user's WebSocket connection is closed. The
+// tick goroutine is already stopped by the done channel closure; this method
+// exists for observability logging and any future cleanup needs.
+func (h *GameHandler) OnDisconnect(userID string) {
+	log.Printf("[tick] user %s disconnected", userID)
 }
 
 func (h *GameHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
@@ -585,4 +735,16 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	resp.GroupMembers = groupMembers
 	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())
 	json.NewEncoder(w).Encode(resp)
+
+	// Push the same state over WebSocket for immediate client refresh.
+	// Fire-and-forget: if the user has no WS connection or the send buffer
+	// is full, the push is silently dropped. The HTTP response above is the
+	// authoritative response; this is a bonus so the client's WS-driven
+	// state path doesn't wait for the next tick.
+	if stateJSON, err := json.Marshal(resp); err == nil {
+		h.hub.SendToUser(userID, ws.Message{
+			Type:    "state",
+			Payload: stateJSON,
+		})
+	}
 }

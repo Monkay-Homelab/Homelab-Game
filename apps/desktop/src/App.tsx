@@ -44,12 +44,6 @@ export function App() {
     }
   }, [token, state, fetchState]);
 
-  useEffect(() => {
-    if (!token) return;
-    const interval = setInterval(fetchState, 5000);
-    return () => clearInterval(interval);
-  }, [token, fetchState]);
-
   if (!token) return <Login />;
   if (!state || !config) {
     return (

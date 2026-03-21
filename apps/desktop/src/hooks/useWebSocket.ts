@@ -44,12 +44,12 @@ export function useWebSocket() {
         try {
           const msg = JSON.parse(e.data);
           console.log('[WS] Message received:', msg.type);
-          if (msg.type === 'event') {
+          if (msg.type === 'state') {
+            useGameStore.getState().setStateFromPush(msg.payload);
+          } else if (msg.type === 'event') {
             const event = JSON.parse(msg.payload);
             console.log(`[EVENT via WS] ${event.severity.toUpperCase()}: ${event.name} — ${event.description}`);
             useGameStore.getState().addEvent(event);
-            // Refresh state to get updated values, but skip event processing on the REST side
-            useGameStore.getState().fetchState();
           }
         } catch {
           // ignore
