@@ -223,7 +223,7 @@ func GetConfig() *GameConfig {
 		Bitcoin: BitcoinConfig{
 			MinPrice:     1000,
 			MaxPrice:     50000,
-			StepInterval: 30,
+			StepInterval: 5,
 			MeanPrice:    10000,
 		},
 	}

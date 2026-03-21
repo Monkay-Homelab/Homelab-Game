@@ -55,9 +55,9 @@ type PriceConfig struct {
 func DefaultPriceConfig() PriceConfig {
 	return PriceConfig{
 		Mu:               10000,
-		Theta:            0.05,
-		Sigma:            500,
-		StepInterval:     30,
+		Theta:            0.02,
+		Sigma:            2000,
+		StepInterval:     5,
 		MinPrice:         1000,
 		MaxPrice:         50000,
 		MaxCatchupSteps:  1000,
