@@ -4,6 +4,8 @@ An AFK/clicker simulation game where you build and manage a homelab — starting
 
 Server-authoritative multiplayer with groups, leaderboards, SaaS business simulation, and a prestige system.
 
+**Play now at [game.homelab.living](https://game.homelab.living/)**
+
 ## How It Works
 
 **Click** to run compute jobs. **Buy hardware** to earn idle income. **Deploy services** like Pi-hole, Plex, Kubernetes, and more. **Upgrade** your rack from 12U to 48U. **Unlock SaaS** to sell hosting to customers. **Colocate** your rack for permanent multipliers and start over. **Build your own datacenter** as the endgame.
