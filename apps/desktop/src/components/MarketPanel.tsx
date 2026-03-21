@@ -160,7 +160,8 @@ export function MarketPanel({ state }: { state: GameState }) {
   const buyCUCost = buyAmount * cuCostPerBTC;
   const canBuy = buyAmount > 0 && state.money >= buyCost && state.compute_units >= buyCUCost;
   const sellProceeds = sellAmount * price;
-  const canSell = sellAmount > 0 && balance >= sellAmount;
+  const sellCUCost = sellAmount * cuCostPerBTC;
+  const canSell = sellAmount > 0 && balance >= sellAmount && state.compute_units >= sellCUCost;
 
   // Max buy (limited by both money and CU)
   const maxByMoney = price > 0 ? Math.floor(state.money / price) : 0;
@@ -341,8 +342,11 @@ export function MarketPanel({ state }: { state: GameState }) {
             />
             <span className="font-mono text-xs self-center" style={{ color: 'var(--text-muted)' }}>BTC</span>
           </div>
-          <div className="font-mono text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+          <div className="font-mono text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
             Proceeds: {formatCurrency(sellProceeds)}
+          </div>
+          <div className="font-mono text-xs mb-2" style={{ color: state.compute_units >= sellCUCost ? 'var(--text-secondary)' : 'var(--accent-red)' }}>
+            CU Cost: {sellCUCost.toLocaleString()}
           </div>
           <div className="flex gap-1 mb-2">
             <button
@@ -360,7 +364,7 @@ export function MarketPanel({ state }: { state: GameState }) {
               10
             </button>
             <button
-              onClick={() => setSellAmount(Math.max(1, balance))}
+              onClick={() => setSellAmount(Math.max(1, Math.min(balance, cuCostPerBTC > 0 ? Math.floor(state.compute_units / cuCostPerBTC) : balance)))}
               className="btn px-2 py-1 text-xs"
               style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.2)' }}
             >

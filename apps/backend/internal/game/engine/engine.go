@@ -1062,12 +1062,23 @@ func (e *Engine) sellBitcoin(gs *models.GameState, payload json.RawMessage, curr
 		return nil, fmt.Errorf("not enough bitcoin (need %d, have %d)", p.Amount, gs.BitcoinBalance)
 	}
 
+	// CU cost: 1000 CU per BTC sold
+	var cuCostPerBTC int64 = 1000
+	if p.Amount > math.MaxInt64/cuCostPerBTC {
+		return nil, fmt.Errorf("amount too large")
+	}
+	cuCost := p.Amount * cuCostPerBTC
+	if gs.ComputeUnits < cuCost {
+		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", cuCost, gs.ComputeUnits)
+	}
+
 	// Overflow guard: reject if multiplication would overflow int64
 	if p.Amount > math.MaxInt64/currentBitcoinPrice {
 		return nil, fmt.Errorf("amount too large")
 	}
 
 	gs.BitcoinBalance -= p.Amount
+	gs.ComputeUnits -= cuCost
 	gs.Money += p.Amount * currentBitcoinPrice
 
 	return &ActionResult{}, nil
