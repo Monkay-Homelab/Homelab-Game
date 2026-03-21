@@ -16,6 +16,7 @@ func newBitcoinTestState() *models.GameState {
 		Tier:           models.TierRack48U,
 		Money:          100000,
 		BitcoinBalance: 10,
+		ComputeUnits:   10_000_000,
 		SaasUnlocked:   true,
 	}
 }
@@ -158,10 +159,13 @@ func TestBuyBitcoin_OverflowBoundary(t *testing.T) {
 	e := New()
 	gs := newBitcoinTestState()
 	gs.Money = math.MaxInt64
+	gs.ComputeUnits = math.MaxInt64
 
-	// This is the exact boundary: MaxInt64 / 10000 = 922337203685477.
-	// amount = maxSafe, price = 10000 should NOT overflow.
-	maxSafe := math.MaxInt64 / int64(10000)
+	// With CU cost of 100000 per BTC, the tighter overflow boundary is
+	// MaxInt64 / 100000 = 92233720368547 (CU multiplication).
+	// The money boundary at price 10000 is MaxInt64 / 10000 = 922337203685477.
+	// Use the CU-safe boundary to verify neither multiplication overflows.
+	maxSafe := math.MaxInt64 / int64(100000)
 	_, err := e.buyBitcoin(gs, makePayload(maxSafe), 10000)
 	if err != nil {
 		t.Fatalf("should not overflow at boundary: %v", err)

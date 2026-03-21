@@ -131,7 +131,7 @@ function PriceChart({ history, minPrice, maxPrice }: { history: BitcoinPricePoin
 
 export function MarketPanel({ state }: { state: GameState }) {
   const config = useConfig();
-  const btcConfig = config.bitcoin ?? { min_price: 1000, max_price: 50000, step_interval: 5, mean_price: 10000, buy_compute_cost_per_btc: 1000 };
+  const btcConfig = config.bitcoin ?? { min_price: 1000, max_price: 50000, step_interval: 5, mean_price: 10000, buy_compute_cost_per_btc: 100000 };
   const buyBitcoin = useGameStore(s => s.buyBitcoin);
   const sellBitcoin = useGameStore(s => s.sellBitcoin);
   const storeError = useGameStore(s => s.error);
@@ -156,7 +156,7 @@ export function MarketPanel({ state }: { state: GameState }) {
 
   // Buy/sell constraints
   const buyCost = buyAmount * price;
-  const cuCostPerBTC = btcConfig.buy_compute_cost_per_btc || 1000;
+  const cuCostPerBTC = btcConfig.buy_compute_cost_per_btc || 100000;
   const buyCUCost = buyAmount * cuCostPerBTC;
   const canBuy = buyAmount > 0 && state.money >= buyCost && state.compute_units >= buyCUCost;
   const sellProceeds = sellAmount * price;

@@ -226,7 +226,7 @@ func GetConfig() *GameConfig {
 			MaxPrice:             50000,
 			StepInterval:         5,
 			MeanPrice:            10000,
-			BuyComputeCostPerBTC: 1000,
+			BuyComputeCostPerBTC: 100000,
 		},
 	}
 }
