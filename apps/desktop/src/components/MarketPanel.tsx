@@ -131,7 +131,7 @@ function PriceChart({ history, minPrice, maxPrice }: { history: BitcoinPricePoin
 
 export function MarketPanel({ state }: { state: GameState }) {
   const config = useConfig();
-  const btcConfig = config.bitcoin ?? { min_price: 1000, max_price: 50000, step_interval: 5, mean_price: 10000 };
+  const btcConfig = config.bitcoin ?? { min_price: 1000, max_price: 50000, step_interval: 5, mean_price: 10000, buy_compute_cost_per_btc: 1000 };
   const buyBitcoin = useGameStore(s => s.buyBitcoin);
   const sellBitcoin = useGameStore(s => s.sellBitcoin);
   const storeError = useGameStore(s => s.error);
@@ -156,12 +156,16 @@ export function MarketPanel({ state }: { state: GameState }) {
 
   // Buy/sell constraints
   const buyCost = buyAmount * price;
-  const canBuy = buyAmount > 0 && state.money >= buyCost;
+  const cuCostPerBTC = btcConfig.buy_compute_cost_per_btc || 1000;
+  const buyCUCost = buyAmount * cuCostPerBTC;
+  const canBuy = buyAmount > 0 && state.money >= buyCost && state.compute_units >= buyCUCost;
   const sellProceeds = sellAmount * price;
   const canSell = sellAmount > 0 && balance >= sellAmount;
 
-  // Max buy
-  const maxBuyable = price > 0 ? Math.floor(state.money / price) : 0;
+  // Max buy (limited by both money and CU)
+  const maxByMoney = price > 0 ? Math.floor(state.money / price) : 0;
+  const maxByCU = cuCostPerBTC > 0 ? Math.floor(state.compute_units / cuCostPerBTC) : 0;
+  const maxBuyable = Math.min(maxByMoney, maxByCU);
 
   async function handleBuy(amount: number) {
     if (amount <= 0) return;
@@ -272,8 +276,11 @@ export function MarketPanel({ state }: { state: GameState }) {
             />
             <span className="font-mono text-xs self-center" style={{ color: 'var(--text-muted)' }}>BTC</span>
           </div>
-          <div className="font-mono text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+          <div className="font-mono text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
             Cost: {formatCurrency(buyCost)}
+          </div>
+          <div className="font-mono text-xs mb-2" style={{ color: state.compute_units >= buyCUCost ? 'var(--text-secondary)' : 'var(--accent-red)' }}>
+            CU Cost: {buyCUCost.toLocaleString()}
           </div>
           <div className="flex gap-1 mb-2">
             <button

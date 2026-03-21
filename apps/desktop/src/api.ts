@@ -217,6 +217,7 @@ export interface BitcoinConfig {
   max_price: number;
   step_interval: number;
   mean_price: number;
+  buy_compute_cost_per_btc: number;
 }
 
 export interface TierConfig {

@@ -109,10 +109,11 @@ type GroupConfig struct {
 }
 
 type BitcoinConfig struct {
-	MinPrice     int64 `json:"min_price"`
-	MaxPrice     int64 `json:"max_price"`
-	StepInterval int   `json:"step_interval"`
-	MeanPrice    int64 `json:"mean_price"`
+	MinPrice             int64 `json:"min_price"`
+	MaxPrice             int64 `json:"max_price"`
+	StepInterval         int   `json:"step_interval"`
+	MeanPrice            int64 `json:"mean_price"`
+	BuyComputeCostPerBTC int64 `json:"buy_compute_cost_per_btc"`
 }
 
 // Tier metadata including labels and flavor text
@@ -221,10 +222,11 @@ func GetConfig() *GameConfig {
 			Description:    "+5% compute bonus per member, up to +50%.",
 		},
 		Bitcoin: BitcoinConfig{
-			MinPrice:     1000,
-			MaxPrice:     50000,
-			StepInterval: 5,
-			MeanPrice:    10000,
+			MinPrice:             1000,
+			MaxPrice:             50000,
+			StepInterval:         5,
+			MeanPrice:            10000,
+			BuyComputeCostPerBTC: 1000,
 		},
 	}
 }

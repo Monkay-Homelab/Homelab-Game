@@ -1028,7 +1028,18 @@ func (e *Engine) buyBitcoin(gs *models.GameState, payload json.RawMessage, curre
 		return nil, fmt.Errorf("not enough money (need $%d, have $%d)", totalCost, gs.Money)
 	}
 
+	// CU cost: 1000 CU per BTC purchased
+	var cuCostPerBTC int64 = 1000
+	if p.Amount > math.MaxInt64/cuCostPerBTC {
+		return nil, fmt.Errorf("amount too large")
+	}
+	cuCost := p.Amount * cuCostPerBTC
+	if gs.ComputeUnits < cuCost {
+		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", cuCost, gs.ComputeUnits)
+	}
+
 	gs.Money -= totalCost
+	gs.ComputeUnits -= cuCost
 	gs.BitcoinBalance += p.Amount
 
 	return &ActionResult{}, nil
