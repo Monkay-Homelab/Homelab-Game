@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, type GameState, type GameConfig } from '../api';
+import { wsClient } from '../wsClient';
 
 export interface GameEvent {
   type: string;
@@ -42,7 +43,13 @@ interface GameStore {
   buildDatacenter: () => Promise<void>;
   upgradeDatacenter: () => Promise<void>;
   buyBitcoin: (amount: number) => Promise<void>;
+  buyMaxBitcoin: () => Promise<void>;
   sellBitcoin: (amount: number) => Promise<void>;
+  sellAllBitcoin: () => Promise<void>;
+  activateOverclock: (tier: number) => Promise<void>;
+  buyResearch: (node: string) => Promise<void>;
+  buyMaxResearch: (node: string) => Promise<void>;
+  optimizeRack: () => Promise<void>;
   setStateFromPush: (state: GameState) => void;
   addEvent: (event: GameEvent) => void;
   dismissEvent: (index: number) => void;
@@ -124,7 +131,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ state: { ...s, compute_units: s.compute_units + Math.floor(reward * knowledgeBoost) } });
     }
     try {
-      const state = await api.action('run_job');
+      const state = await wsClient.sendAction('run_job');
       set({ state, error: null });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -134,7 +141,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buyHardware: async (name) => {
     set({ error: null });
     try {
-      const state = await api.action('buy_hardware', { name });
+      const state = await wsClient.sendAction('buy_hardware', { name });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -144,7 +151,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   sellHardware: async (id) => {
     set({ error: null });
     try {
-      const state = await api.action('sell_hardware', { id });
+      const state = await wsClient.sendAction('sell_hardware', { id });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -154,7 +161,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   deployService: async (name) => {
     set({ error: null });
     try {
-      const state = await api.action('deploy_service', { name });
+      const state = await wsClient.sendAction('deploy_service', { name });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -164,7 +171,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   deployAllServices: async () => {
     set({ error: null });
     try {
-      const state = await api.action('bulk_deploy_services');
+      const state = await wsClient.sendAction('bulk_deploy_services');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -174,7 +181,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buyUpgrade: async (name) => {
     set({ error: null });
     try {
-      const state = await api.action('buy_upgrade', { name });
+      const state = await wsClient.sendAction('buy_upgrade', { name });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -184,7 +191,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buyAllUpgrades: async (type) => {
     set({ error: null });
     try {
-      const state = await api.action('bulk_buy_upgrades', type ? { type } : {});
+      const state = await wsClient.sendAction('bulk_buy_upgrades', type ? { type } : {});
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -194,7 +201,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   upgradeComponent: async (hardwareId, component) => {
     set({ error: null });
     try {
-      const state = await api.action('upgrade_component', { hardware_id: hardwareId, component });
+      const state = await wsClient.sendAction('upgrade_component', { hardware_id: hardwareId, component });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -204,7 +211,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   upgradeAllComponents: async () => {
     set({ error: null });
     try {
-      const state = await api.action('bulk_upgrade_components');
+      const state = await wsClient.sendAction('bulk_upgrade_components');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -214,7 +221,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resolveEvent: async () => {
     set({ error: null });
     try {
-      const state = await api.action('resolve_event');
+      const state = await wsClient.sendAction('resolve_event');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -224,7 +231,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   unlockSaas: async () => {
     set({ error: null });
     try {
-      const state = await api.action('unlock_saas');
+      const state = await wsClient.sendAction('unlock_saas');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -234,7 +241,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   deploySaas: async (name) => {
     set({ error: null });
     try {
-      const state = await api.action('deploy_saas', { name });
+      const state = await wsClient.sendAction('deploy_saas', { name });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -244,7 +251,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   deployAllSaas: async () => {
     set({ error: null });
     try {
-      const state = await api.action('bulk_deploy_saas');
+      const state = await wsClient.sendAction('bulk_deploy_saas');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -254,7 +261,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   upgradeTier: async () => {
     set({ error: null });
     try {
-      const state = await api.action('upgrade_tier');
+      const state = await wsClient.sendAction('upgrade_tier');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -264,7 +271,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   colo: async () => {
     set({ error: null });
     try {
-      const state = await api.action('colo');
+      const state = await wsClient.sendAction('colo');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -274,7 +281,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   donateCU: async (amount: number) => {
     set({ error: null });
     try {
-      const state = await api.action('donate_cu', { amount });
+      const state = await wsClient.sendAction('donate_cu', { amount });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -284,7 +291,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buildDatacenter: async () => {
     set({ error: null });
     try {
-      const state = await api.action('build_datacenter');
+      const state = await wsClient.sendAction('build_datacenter');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -294,7 +301,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   upgradeDatacenter: async () => {
     set({ error: null });
     try {
-      const state = await api.action('upgrade_datacenter');
+      const state = await wsClient.sendAction('upgrade_datacenter');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -304,7 +311,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buyBitcoin: async (amount) => {
     set({ error: null });
     try {
-      const state = await api.action('buy_bitcoin', { amount });
+      const state = await wsClient.sendAction('buy_bitcoin', { amount });
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  buyMaxBitcoin: async () => {
+    set({ error: null });
+    try {
+      const state = await wsClient.sendAction('buy_max_bitcoin', {});
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -314,7 +331,57 @@ export const useGameStore = create<GameStore>((set, get) => ({
   sellBitcoin: async (amount) => {
     set({ error: null });
     try {
-      const state = await api.action('sell_bitcoin', { amount });
+      const state = await wsClient.sendAction('sell_bitcoin', { amount });
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  sellAllBitcoin: async () => {
+    set({ error: null });
+    try {
+      const state = await wsClient.sendAction('sell_all_bitcoin', {});
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  activateOverclock: async (tier) => {
+    set({ error: null });
+    try {
+      const state = await wsClient.sendAction('activate_overclock', { tier });
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  buyResearch: async (node) => {
+    set({ error: null });
+    try {
+      const state = await wsClient.sendAction('buy_research', { node });
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  buyMaxResearch: async (node) => {
+    set({ error: null });
+    try {
+      const state = await wsClient.sendAction('bulk_buy_research', { node });
+      set({ state });
+    } catch (e) {
+      set({ error: (e as Error).message });
+    }
+  },
+
+  optimizeRack: async () => {
+    set({ error: null });
+    try {
+      const state = await wsClient.sendAction('optimize_rack');
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });

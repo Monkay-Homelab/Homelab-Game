@@ -84,6 +84,14 @@ func RateLimitNamed(name string, maxPerMinute int) func(http.Handler) http.Handl
 	}
 }
 
+// CheckGameActionRate checks whether a game action from the given user should
+// be allowed under the rate limit. It uses the same bucket name pattern and
+// rate as the HTTP game action middleware (7200 req/min per user). Returns
+// true if the request is within the limit, false if it should be rejected.
+func CheckGameActionRate(userID string) bool {
+	return checkRate("game:user:"+userID, 7200)
+}
+
 // RateLimitByUser limits requests per authenticated user ID with a named bucket.
 // Falls back to IP if user ID not in context.
 func RateLimitByUser(name string, maxPerMinute int) func(http.Handler) http.Handler {

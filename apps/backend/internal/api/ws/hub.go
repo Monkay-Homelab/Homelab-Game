@@ -76,6 +76,11 @@ type Hub struct {
 	// OnDisconnect is called during cleanup after the done channel has been
 	// closed. The tick goroutine has already been signaled to stop.
 	OnDisconnect func(userID string)
+
+	// OnMessage is called when a client sends a message over the WebSocket.
+	// The hub routes the raw message bytes to this callback for processing
+	// (e.g., game action handling). If nil, incoming messages are discarded.
+	OnMessage func(userID string, data []byte)
 }
 
 func NewHub() *Hub {
@@ -182,8 +187,9 @@ func (c *Client) writePump() {
 	}
 }
 
-// readPump reads from the WebSocket connection, discarding all messages.
-// It detects client disconnection and is responsible for cleanup.
+// readPump reads from the WebSocket connection, routing incoming messages to
+// the hub's OnMessage callback. It detects client disconnection and is
+// responsible for cleanup.
 func (c *Client) readPump() {
 	defer func() {
 		// Close done channel to signal tick goroutine shutdown (Phase 1).
@@ -218,14 +224,19 @@ func (c *Client) readPump() {
 	}()
 
 	c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	c.conn.SetReadLimit(65536) // 64KB max incoming message size
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
 
 	for {
-		if _, _, err := c.conn.ReadMessage(); err != nil {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
 			break
+		}
+		if c.hub.OnMessage != nil {
+			c.hub.OnMessage(c.UserID, message)
 		}
 	}
 }

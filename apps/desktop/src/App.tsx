@@ -12,15 +12,18 @@ import { SaasPanel } from './components/SaasPanel';
 import { DatacenterPanel } from './components/DatacenterPanel';
 import { SocialPanel } from './components/SocialPanel';
 import { MarketPanel } from './components/MarketPanel';
+import { ResearchPanel } from './components/ResearchPanel';
 import { EventLog } from './components/EventLog';
+import { OverclockPanel } from './components/OverclockPanel';
 import { useWebSocket } from './hooks/useWebSocket';
 
-type Tab = 'hardware' | 'services' | 'upgrades' | 'saas' | 'datacenter' | 'social' | 'market';
+type Tab = 'hardware' | 'services' | 'upgrades' | 'research' | 'saas' | 'datacenter' | 'social' | 'market';
 
 const TABS: { id: Tab; label: string; icon: string; color: string }[] = [
   { id: 'hardware', label: 'Hardware', icon: '[ ]', color: 'var(--accent-purple)' },
   { id: 'services', label: 'Services', icon: '{ }', color: 'var(--accent-blue)' },
   { id: 'upgrades', label: 'Upgrades', icon: ' ^ ', color: 'var(--accent-green)' },
+  { id: 'research', label: 'Research', icon: ' ? ', color: '#8b5cf6' },
   { id: 'saas', label: 'SaaS', icon: ' $ ', color: 'var(--accent-amber)' },
   { id: 'datacenter', label: 'Datacenter', icon: ' # ', color: 'var(--accent-cyan)' },
   { id: 'market', label: 'Market', icon: ' B ', color: 'var(--accent-amber)' },
@@ -94,6 +97,7 @@ export function App() {
           <ClickArea tier={state.tier} />
           <TierProgress tier={state.tier} computeUnits={state.compute_units} coloCount={state.colo_count} />
           <DonatePanel state={state} />
+          <OverclockPanel state={state} />
         </div>
 
         {/* Right Content — Tabbed */}
@@ -125,6 +129,7 @@ export function App() {
             {activeTab === 'hardware' && <HardwarePanel state={state} />}
             {activeTab === 'services' && <ServicePanel state={state} />}
             {activeTab === 'upgrades' && <UpgradePanel state={state} />}
+            {activeTab === 'research' && <ResearchPanel state={state} />}
             {activeTab === 'saas' && <SaasPanel state={state} />}
             {activeTab === 'datacenter' && <DatacenterPanel state={state} />}
             {activeTab === 'market' && <MarketPanel state={state} />}

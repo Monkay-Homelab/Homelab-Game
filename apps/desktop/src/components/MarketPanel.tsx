@@ -133,7 +133,9 @@ export function MarketPanel({ state }: { state: GameState }) {
   const config = useConfig();
   const btcConfig = config.bitcoin ?? { min_price: 1000, max_price: 50000, step_interval: 5, mean_price: 10000, buy_compute_cost_per_btc: 100000 };
   const buyBitcoin = useGameStore(s => s.buyBitcoin);
+  const buyMaxBitcoin = useGameStore(s => s.buyMaxBitcoin);
   const sellBitcoin = useGameStore(s => s.sellBitcoin);
+  const sellAllBitcoin = useGameStore(s => s.sellAllBitcoin);
   const storeError = useGameStore(s => s.error);
 
   const [buyAmount, setBuyAmount] = useState(1);
@@ -299,7 +301,7 @@ export function MarketPanel({ state }: { state: GameState }) {
               10
             </button>
             <button
-              onClick={() => setBuyAmount(Math.max(1, maxBuyable))}
+              onClick={() => { setTradeError(null); buyMaxBitcoin().catch(e => setTradeError((e as Error).message)); }}
               className="btn px-2 py-1 text-xs"
               style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--accent-green)', border: '1px solid rgba(34,197,94,0.2)' }}
             >
@@ -364,7 +366,7 @@ export function MarketPanel({ state }: { state: GameState }) {
               10
             </button>
             <button
-              onClick={() => setSellAmount(Math.max(1, Math.min(balance, cuCostPerBTC > 0 ? Math.floor(state.compute_units / cuCostPerBTC) : balance)))}
+              onClick={() => { setTradeError(null); sellAllBitcoin().catch(e => setTradeError((e as Error).message)); }}
               className="btn px-2 py-1 text-xs"
               style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.2)' }}
             >

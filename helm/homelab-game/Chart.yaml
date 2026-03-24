@@ -1,0 +1,6 @@
+apiVersion: v2
+name: homelab-game
+description: Homelab the Game — AFK/clicker simulation game
+version: 0.1.0
+appVersion: "0.1.0"
+type: application

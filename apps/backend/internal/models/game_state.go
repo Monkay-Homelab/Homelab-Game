@@ -38,6 +38,9 @@ type GameState struct {
 	TotalCustomers        int       `json:"total_customers"`
 	ThrottleMultiplier    float64   `json:"throttle_multiplier"`
 	ThrottleTicksRemaining int      `json:"throttle_ticks_remaining"`
+	OverclockMultiplier    float64   `json:"overclock_multiplier"`
+	OverclockTicksRemaining int      `json:"overclock_ticks_remaining"`
+	RackOptimization       int       `json:"rack_optimization"`
 	DatacenterTier           int       `json:"datacenter_tier"`
 	OwnsDatacenter           bool      `json:"owns_datacenter"`
 	DatacenterLevel          int       `json:"datacenter_level"`
@@ -123,4 +126,12 @@ type ColoRack struct {
 	ReputationPerTick int64    `json:"reputation_per_tick"`
 	MoneyPerTick     int64     `json:"money_per_tick"`
 	ColoAt           time.Time `json:"colo_at"`
+}
+
+type ResearchLevel struct {
+	ID           string    `json:"id"`
+	GameStateID  string    `json:"game_state_id"`
+	ResearchNode string    `json:"research_node"`
+	Level        int       `json:"level"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

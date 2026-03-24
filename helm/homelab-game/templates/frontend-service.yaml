@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "homelab-game.fullname" . }}-frontend
+  labels:
+    {{- include "homelab-game.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "homelab-game.frontend.selectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.frontend.port }}
+      targetPort: {{ .Values.frontend.port }}
+      protocol: TCP

@@ -1,6 +1,9 @@
 package engine
 
-import "github.com/homelab-game/backend/internal/models"
+import (
+	"github.com/homelab-game/backend/internal/game/catalog"
+	"github.com/homelab-game/backend/internal/models"
+)
 
 // --- Package-level maps for hardware bonuses (used by both ProcessIdleProgress and GetConfig) ---
 
@@ -38,6 +41,9 @@ type GameConfig struct {
 	Leaderboard     LeaderboardConfig   `json:"leaderboard"`
 	Group           GroupConfig         `json:"group"`
 	Bitcoin         BitcoinConfig       `json:"bitcoin"`
+	Overclock        OverclockConfig        `json:"overclock"`
+	Research         ResearchConfig         `json:"research"`
+	RackOptimization RackOptimizationConfig `json:"rack_optimization"`
 }
 
 type TierConfig struct {
@@ -114,6 +120,47 @@ type BitcoinConfig struct {
 	StepInterval         int   `json:"step_interval"`
 	MeanPrice            int64 `json:"mean_price"`
 	BuyComputeCostPerBTC int64 `json:"buy_compute_cost_per_btc"`
+}
+
+type OverclockTierConfig struct {
+	Tier       int     `json:"tier"`
+	Multiplier float64 `json:"multiplier"`
+	Cost       int64   `json:"cost"`
+	Duration   int     `json:"duration"`
+	HeatFactor float64 `json:"heat_factor"`
+	Label      string  `json:"label"`
+}
+
+type OverclockConfig struct {
+	Tiers              []OverclockTierConfig `json:"tiers"`
+	TickIntervalSeconds int                  `json:"tick_interval_seconds"`
+}
+
+type ResearchConfig struct {
+	Nodes []catalog.ResearchNode `json:"nodes"`
+}
+
+type RackOptimizationConfig struct {
+	BaseCost       int64   `json:"base_cost"`
+	CostMultiplier float64 `json:"cost_multiplier"`
+	BonusPerLevel  float64 `json:"bonus_per_level"`
+}
+
+// overclockTiers defines the available overclock tiers.
+var overclockTiers = []OverclockTierConfig{
+	{Tier: 1, Multiplier: 2.0, Cost: 50000, Duration: 60, HeatFactor: 1.0, Label: "2x Boost"},
+	{Tier: 2, Multiplier: 3.0, Cost: 200000, Duration: 60, HeatFactor: 2.0, Label: "3x Boost"},
+	{Tier: 3, Multiplier: 5.0, Cost: 1000000, Duration: 60, HeatFactor: 4.0, Label: "5x Boost"},
+}
+
+// getOverclockTier returns the config for the given tier number, or nil if invalid.
+func getOverclockTier(tier int) *OverclockTierConfig {
+	for i := range overclockTiers {
+		if overclockTiers[i].Tier == tier {
+			return &overclockTiers[i]
+		}
+	}
+	return nil
 }
 
 // Tier metadata including labels and flavor text
@@ -227,6 +274,18 @@ func GetConfig() *GameConfig {
 			StepInterval:         5,
 			MeanPrice:            10000,
 			BuyComputeCostPerBTC: 100000,
+		},
+		Overclock: OverclockConfig{
+			Tiers:              overclockTiers,
+			TickIntervalSeconds: 5,
+		},
+		Research: ResearchConfig{
+			Nodes: catalog.ResearchNodes,
+		},
+		RackOptimization: RackOptimizationConfig{
+			BaseCost:       100000,
+			CostMultiplier: 2.0,
+			BonusPerLevel:  0.10,
 		},
 	}
 }

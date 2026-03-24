@@ -1,0 +1,77 @@
+# -- Backend (Go API server)
+backend:
+  image:
+    repository: ghcr.io/monkay-homelab/homelab-game-backend
+    tag: ""  # defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  env:
+    PORT: "8080"
+
+# -- Frontend (nginx serving static Vite build)
+frontend:
+  image:
+    repository: ghcr.io/monkay-homelab/homelab-game-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# -- PostgreSQL + TimescaleDB
+postgresql:
+  image:
+    repository: timescale/timescaledb
+    tag: "2.17.2-pg16"
+    pullPolicy: IfNotPresent
+  port: 5432
+  database: homelab_game
+  username: homelab_game
+  # password: set via --set or external secret
+  persistence:
+    storageClass: "local-path"  # k3s default; swap to "longhorn" for snapshots
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Database migrations (init container on backend pod)
+migrations:
+  image:
+    repository: ghcr.io/monkay-homelab/homelab-game-migrations
+    tag: ""  # defaults to Chart.appVersion
+
+# -- Secrets (override at install time via --set or external secret)
+secrets:
+  dbPassword: ""
+  jwtSecret: ""
+
+# -- Ingress
+ingress:
+  enabled: true
+  className: traefik  # k3s default
+  apiHost: api.homelab.living
+  gameHost: game.homelab.living
+  tls: []
+  #  - secretName: homelab-game-tls
+  #    hosts:
+  #      - api.homelab.living
+  #      - game.homelab.living

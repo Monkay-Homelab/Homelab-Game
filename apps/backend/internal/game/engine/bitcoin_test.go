@@ -330,7 +330,7 @@ func TestProcessAction_BuyBitcoinDispatch(t *testing.T) {
 	gs.Money = 50000
 	gs.BitcoinBalance = 0
 
-	_, err := e.ProcessAction(gs, "buy_bitcoin", makePayload(2), nil, nil, nil, nil, 10000)
+	_, err := e.ProcessAction(gs, "buy_bitcoin", makePayload(2), nil, nil, nil, nil, nil, 10000)
 	if err != nil {
 		t.Fatalf("buy_bitcoin dispatch failed: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestProcessAction_SellBitcoinDispatch(t *testing.T) {
 	gs.BitcoinBalance = 5
 	gs.Money = 0
 
-	_, err := e.ProcessAction(gs, "sell_bitcoin", makePayload(3), nil, nil, nil, nil, 10000)
+	_, err := e.ProcessAction(gs, "sell_bitcoin", makePayload(3), nil, nil, nil, nil, nil, 10000)
 	if err != nil {
 		t.Fatalf("sell_bitcoin dispatch failed: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestProcessAction_NonBitcoinActionIgnoresPrice(t *testing.T) {
 	originalMoney := gs.Money
 
 	// run_job should work fine with bitcoin price = 0.
-	_, err := e.ProcessAction(gs, "run_job", nil, nil, nil, nil, nil, 0)
+	_, err := e.ProcessAction(gs, "run_job", nil, nil, nil, nil, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("run_job failed: %v", err)
 	}

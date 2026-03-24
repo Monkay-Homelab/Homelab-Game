@@ -99,14 +99,14 @@ func TestDefaultPriceConfig(t *testing.T) {
 	if cfg.Mu != 10000 {
 		t.Errorf("Mu = %d, want 10000", cfg.Mu)
 	}
-	if cfg.Theta != 0.05 {
-		t.Errorf("Theta = %f, want 0.05", cfg.Theta)
+	if cfg.Theta != 0.02 {
+		t.Errorf("Theta = %f, want 0.02", cfg.Theta)
 	}
-	if cfg.Sigma != 500 {
-		t.Errorf("Sigma = %f, want 500", cfg.Sigma)
+	if cfg.Sigma != 2000 {
+		t.Errorf("Sigma = %f, want 2000", cfg.Sigma)
 	}
-	if cfg.StepInterval != 30 {
-		t.Errorf("StepInterval = %d, want 30", cfg.StepInterval)
+	if cfg.StepInterval != 5 {
+		t.Errorf("StepInterval = %d, want 5", cfg.StepInterval)
 	}
 	if cfg.MinPrice != 1000 {
 		t.Errorf("MinPrice = %d, want 1000", cfg.MinPrice)
@@ -237,7 +237,7 @@ func TestGetCurrentPrice_NoStepsIfNotEnoughTimeElapsed(t *testing.T) {
 	cfg := DefaultPriceConfig()
 	svc := NewPriceService(store, cfg)
 
-	price, err := svc.GetCurrentPrice(context.Background(), now.Add(15*time.Second))
+	price, err := svc.GetCurrentPrice(context.Background(), now.Add(4*time.Second))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,13 +249,13 @@ func TestGetCurrentPrice_NoStepsIfNotEnoughTimeElapsed(t *testing.T) {
 	}
 }
 
-func TestGetCurrentPrice_ExactlyOneStepAfter30s(t *testing.T) {
+func TestGetCurrentPrice_ExactlyOneStepAfter5s(t *testing.T) {
 	now := time.Date(2026, 3, 21, 12, 0, 0, 0, time.UTC)
 	store := newMemPriceStore(10000, 42, now)
 	cfg := DefaultPriceConfig()
 	svc := NewPriceService(store, cfg)
 
-	_, err := svc.GetCurrentPrice(context.Background(), now.Add(30*time.Second))
+	_, err := svc.GetCurrentPrice(context.Background(), now.Add(5*time.Second))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +270,8 @@ func TestGetCurrentPrice_MultipleSteps(t *testing.T) {
 	cfg := DefaultPriceConfig()
 	svc := NewPriceService(store, cfg)
 
-	_, err := svc.GetCurrentPrice(context.Background(), now.Add(90*time.Second))
+	// 15s / 5s step interval = 3 steps
+	_, err := svc.GetCurrentPrice(context.Background(), now.Add(15*time.Second))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -299,10 +300,10 @@ func TestGetCurrentPrice_DeterministicReplay_SameBatchSize(t *testing.T) {
 	now := time.Date(2026, 3, 21, 12, 0, 0, 0, time.UTC)
 	cfg := DefaultPriceConfig()
 
-	// Run 1: advance 5 steps in one call.
+	// Run 1: advance 5 steps in one call (25s / 5s interval = 5 steps).
 	store1 := newMemPriceStore(10000, 42, now)
 	svc1 := NewPriceService(store1, cfg)
-	price1, err := svc1.GetCurrentPrice(context.Background(), now.Add(150*time.Second))
+	price1, err := svc1.GetCurrentPrice(context.Background(), now.Add(25*time.Second))
 	if err != nil {
 		t.Fatalf("run 1 error: %v", err)
 	}
@@ -310,7 +311,7 @@ func TestGetCurrentPrice_DeterministicReplay_SameBatchSize(t *testing.T) {
 	// Run 2: same initial state, same 5 steps in one call.
 	store2 := newMemPriceStore(10000, 42, now)
 	svc2 := NewPriceService(store2, cfg)
-	price2, err := svc2.GetCurrentPrice(context.Background(), now.Add(150*time.Second))
+	price2, err := svc2.GetCurrentPrice(context.Background(), now.Add(25*time.Second))
 	if err != nil {
 		t.Fatalf("run 2 error: %v", err)
 	}
@@ -340,17 +341,17 @@ func TestGetCurrentPrice_IncrementalVsBulkDiverges(t *testing.T) {
 	now := time.Date(2026, 3, 21, 12, 0, 0, 0, time.UTC)
 	cfg := DefaultPriceConfig()
 
-	// Bulk: 5 steps in one call.
+	// Bulk: 5 steps in one call (25s / 5s interval = 5 steps).
 	store1 := newMemPriceStore(10000, 42, now)
 	svc1 := NewPriceService(store1, cfg)
-	priceBulk, _ := svc1.GetCurrentPrice(context.Background(), now.Add(150*time.Second))
+	priceBulk, _ := svc1.GetCurrentPrice(context.Background(), now.Add(25*time.Second))
 
-	// Incremental: 5 steps in 5 calls (1 step each).
+	// Incremental: 5 steps in 5 calls (1 step each at 5s intervals).
 	store2 := newMemPriceStore(10000, 42, now)
 	svc2 := NewPriceService(store2, cfg)
 	var priceIncr int64
 	for i := 1; i <= 5; i++ {
-		priceIncr, _ = svc2.GetCurrentPrice(context.Background(), now.Add(time.Duration(i*30)*time.Second))
+		priceIncr, _ = svc2.GetCurrentPrice(context.Background(), now.Add(time.Duration(i*5)*time.Second))
 	}
 
 	// These WILL differ because the seed persistence mechanism consumes an extra
@@ -368,7 +369,7 @@ func TestGetCurrentPrice_SeedPersistedAndContinued(t *testing.T) {
 	cfg := DefaultPriceConfig()
 	svc := NewPriceService(store, cfg)
 
-	_, err := svc.GetCurrentPrice(context.Background(), now.Add(30*time.Second))
+	_, err := svc.GetCurrentPrice(context.Background(), now.Add(5*time.Second))
 	if err != nil {
 		t.Fatalf("step 1 error: %v", err)
 	}
@@ -377,7 +378,7 @@ func TestGetCurrentPrice_SeedPersistedAndContinued(t *testing.T) {
 		t.Error("seed was not updated after stepping; deterministic replay will break on restart")
 	}
 
-	price, err := svc.GetCurrentPrice(context.Background(), now.Add(60*time.Second))
+	price, err := svc.GetCurrentPrice(context.Background(), now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("step 2 error: %v", err)
 	}
@@ -407,13 +408,13 @@ func TestGetCurrentPrice_LastStepAtAdvancesCorrectly(t *testing.T) {
 	cfg := DefaultPriceConfig()
 	svc := NewPriceService(store, cfg)
 
-	// 75s = 2 full steps, 15s remainder.
-	_, err := svc.GetCurrentPrice(context.Background(), now.Add(75*time.Second))
+	// 13s / 5s interval = 2 full steps, 3s remainder.
+	_, err := svc.GetCurrentPrice(context.Background(), now.Add(13*time.Second))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expectedLastStep := now.Add(60 * time.Second)
+	expectedLastStep := now.Add(10 * time.Second)
 	if !store.state.LastStepAt.Equal(expectedLastStep) {
 		t.Errorf("LastStepAt = %v, want %v", store.state.LastStepAt, expectedLastStep)
 	}
@@ -425,7 +426,8 @@ func TestGetCurrentPrice_HistoryTimestampsAreCorrect(t *testing.T) {
 	cfg := DefaultPriceConfig()
 	svc := NewPriceService(store, cfg)
 
-	_, err := svc.GetCurrentPrice(context.Background(), now.Add(90*time.Second))
+	// 15s / 5s interval = 3 steps
+	_, err := svc.GetCurrentPrice(context.Background(), now.Add(15*time.Second))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -434,9 +436,9 @@ func TestGetCurrentPrice_HistoryTimestampsAreCorrect(t *testing.T) {
 		t.Fatalf("expected 3 history points, got %d", len(store.history))
 	}
 	for i, expected := range []time.Time{
-		now.Add(30 * time.Second),
-		now.Add(60 * time.Second),
-		now.Add(90 * time.Second),
+		now.Add(5 * time.Second),
+		now.Add(10 * time.Second),
+		now.Add(15 * time.Second),
 	} {
 		if !store.history[i].Time.Equal(expected) {
 			t.Errorf("history[%d].Time = %v, want %v", i, store.history[i].Time, expected)
@@ -453,7 +455,7 @@ func TestGetCurrentPrice_PriceAlwaysWithinBounds(t *testing.T) {
 		store := newMemPriceStore(10000, seed, now)
 		svc := NewPriceService(store, cfg)
 
-		_, err := svc.GetCurrentPrice(context.Background(), now.Add(time.Duration(100*30)*time.Second))
+		_, err := svc.GetCurrentPrice(context.Background(), now.Add(time.Duration(100*5)*time.Second))
 		if err != nil {
 			t.Fatalf("seed %d error: %v", seed, err)
 		}
@@ -586,7 +588,8 @@ func TestOrnsteinUhlenbeck_StatisticalProperties(t *testing.T) {
 	store := newMemPriceStore(10000, 42, now)
 	svc := NewPriceService(store, cfg)
 
-	_, err := svc.GetCurrentPrice(context.Background(), now.Add(time.Duration(5000*30)*time.Second))
+	// 10000 steps at 5s intervals = 50000s of simulation
+	_, err := svc.GetCurrentPrice(context.Background(), now.Add(time.Duration(10000*5)*time.Second))
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -607,12 +610,16 @@ func TestOrnsteinUhlenbeck_StatisticalProperties(t *testing.T) {
 	}
 	stdDev := math.Sqrt(sumSqDiff / float64(len(store.history)))
 
-	if mean < 7000 || mean > 13000 {
-		t.Errorf("mean price = %.0f, expected near 10000 (OU mean-reversion broken)", mean)
+	// With sigma=2000 and theta=0.02, the OU process has wider swings and slower
+	// mean-reversion, so the mean can deviate further from mu=10000. The theoretical
+	// stationary std dev is sigma/sqrt(2*theta) = 2000/sqrt(0.04) = 10000, but clamping
+	// to [1000, 50000] constrains the actual distribution.
+	if mean < 5000 || mean > 25000 {
+		t.Errorf("mean price = %.0f, expected within [5000, 25000] (OU mean-reversion broken)", mean)
 	}
 
-	if stdDev < 100 {
-		t.Errorf("price stddev = %.0f, expected > 100 (price not fluctuating)", stdDev)
+	if stdDev < 500 {
+		t.Errorf("price stddev = %.0f, expected > 500 (price not fluctuating enough with sigma=2000)", stdDev)
 	}
 
 	for i, p := range store.history {

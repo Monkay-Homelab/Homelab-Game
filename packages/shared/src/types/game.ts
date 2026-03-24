@@ -41,6 +41,12 @@ export enum ActionType {
   UpgradeRack = 'upgrade_rack',
   UpgradeTier = 'upgrade_tier',
   Colo = 'colo',
+  BuyMaxBitcoin = 'buy_max_bitcoin',
+  SellAllBitcoin = 'sell_all_bitcoin',
+  ActivateOverclock = 'activate_overclock',
+  BuyResearch = 'buy_research',
+  BulkBuyResearch = 'bulk_buy_research',
+  OptimizeRack = 'optimize_rack',
 }
 
 export interface GameAction {

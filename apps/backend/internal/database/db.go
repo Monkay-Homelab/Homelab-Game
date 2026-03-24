@@ -13,8 +13,8 @@ func Connect(databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 
-	config.MaxConns = 20
-	config.MinConns = 2
+	config.MaxConns = 50
+	config.MinConns = 5
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {

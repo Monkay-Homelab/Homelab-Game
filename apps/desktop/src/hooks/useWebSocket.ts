@@ -1,13 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useGameStore } from '../stores/gameStore';
-
-const WS_URL = (import.meta.env.VITE_API_URL || 'https://api.homelab.living')
-  .replace('https://', 'wss://')
-  .replace('http://', 'ws://');
+import { wsClient } from '../wsClient';
 
 export function useWebSocket() {
   const token = useGameStore(s => s.token);
-  const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mountedRef = useRef(true);
 
@@ -28,50 +24,22 @@ export function useWebSocket() {
 
     function connect() {
       if (!mountedRef.current) return;
-      if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
-      const ws = new WebSocket(`${WS_URL}/ws?token=${token}`);
-
-      ws.onopen = () => {
-        if (!mountedRef.current) {
-          ws.close();
-          return;
-        }
-        console.log('WebSocket connected');
-      };
-
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          console.log('[WS] Message received:', msg.type);
-          if (msg.type === 'state') {
-            useGameStore.getState().setStateFromPush(msg.payload);
-          } else if (msg.type === 'event') {
-            const event = JSON.parse(msg.payload);
-            console.log(`[EVENT via WS] ${event.severity.toUpperCase()}: ${event.name} — ${event.description}`);
-            useGameStore.getState().addEvent(event);
-          }
-        } catch {
-          // ignore
-        }
-      };
-
-      ws.onclose = () => {
-        wsRef.current = null;
+      wsClient.setOnState(useGameStore.getState().setStateFromPush);
+      wsClient.setOnEvent(useGameStore.getState().addEvent);
+      wsClient.setOnClose(() => {
         if (mountedRef.current) {
           reconnectTimer.current = setTimeout(connect, 5000);
         }
-      };
+      });
 
-      wsRef.current = ws;
+      wsClient.connect(token!);
     }
 
     function cleanup() {
       clearTimeout(reconnectTimer.current);
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      wsClient.setOnClose(null);
+      wsClient.disconnect();
     }
 
     return () => {

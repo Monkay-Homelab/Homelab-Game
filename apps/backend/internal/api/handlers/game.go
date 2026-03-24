@@ -15,6 +15,7 @@ import (
 	"github.com/homelab-game/backend/internal/api/ws"
 	"github.com/homelab-game/backend/internal/database/queries"
 	"github.com/homelab-game/backend/internal/game/bitcoin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/homelab-game/backend/internal/game/catalog"
 	"github.com/homelab-game/backend/internal/game/engine"
 	"github.com/homelab-game/backend/internal/game/events"
@@ -55,24 +56,91 @@ func (m *userMutexMap) Unlock(userID string) {
 // idle progress and pushing state over WebSocket.
 const defaultTickInterval = 5 * time.Second
 
+// cachedChildData holds all child-table data from the last full tick.
+// This is kept in-memory and reused during light ticks when the user
+// has not performed any actions since the last full tick.
+type cachedChildData struct {
+	Hardware          []models.Hardware
+	Services          []models.Service
+	Upgrades          []models.Upgrade
+	ComponentUpgrades []models.ComponentUpgrade
+	ResearchLevels    []models.ResearchLevel
+	Customers         []models.Customer
+	Expenses          []models.Expense
+	ColoRacks         []models.ColoRack
+	GroupBonus        float64
+	GroupMembers      int
+}
+
+// userTickState tracks whether a user's game state has changed since the last tick,
+// and caches the last-known state for light ticks.
+type userTickState struct {
+	dirty       bool             // true = action occurred since last tick
+	cachedData  *cachedChildData // cached child data from last full tick
+	cachedGS    *models.GameState // cached game state from last full tick
+	lastPayload []byte           // pre-serialized JSON of last response
+}
+
+// tickStateMap provides thread-safe per-user tick state tracking.
+type tickStateMap struct {
+	mu    sync.RWMutex
+	state map[string]*userTickState
+}
+
+func newTickStateMap() *tickStateMap {
+	return &tickStateMap{state: make(map[string]*userTickState)}
+}
+
+func (m *tickStateMap) Get(userID string) *userTickState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.state[userID]
+}
+
+func (m *tickStateMap) Set(userID string, ts *userTickState) {
+	m.mu.Lock()
+	m.state[userID] = ts
+	m.mu.Unlock()
+}
+
+func (m *tickStateMap) Delete(userID string) {
+	m.mu.Lock()
+	delete(m.state, userID)
+	m.mu.Unlock()
+}
+
+func (m *tickStateMap) MarkDirty(userID string) {
+	m.mu.RLock()
+	ts := m.state[userID]
+	m.mu.RUnlock()
+	if ts != nil {
+		ts.dirty = true // No lock needed — single writer (processAction holds per-user mutex)
+	}
+}
+
 type GameHandler struct {
-	gameState    *queries.GameStateQueries
-	hardware     *queries.HardwareQueries
-	services     *queries.ServiceQueries
-	upgrades     *queries.UpgradeQueries
-	components   *queries.ComponentUpgradeQueries
-	customers    *queries.CustomerQueries
-	expenses     *queries.ExpenseQueries
-	coloRacks    *queries.ColoRackQueries
-	groups       *queries.GroupQueries
-	engine       *engine.Engine
-	hub          *ws.Hub
-	userLocks    *userMutexMap
-	bitcoinSvc   *bitcoin.PriceService
-	tickInterval time.Duration
+	pool          *pgxpool.Pool
+	gameState     *queries.GameStateQueries
+	hardware      *queries.HardwareQueries
+	services      *queries.ServiceQueries
+	upgrades      *queries.UpgradeQueries
+	components    *queries.ComponentUpgradeQueries
+	customers     *queries.CustomerQueries
+	expenses      *queries.ExpenseQueries
+	coloRacks     *queries.ColoRackQueries
+	groups        *queries.GroupQueries
+	research      *queries.ResearchLevelQueries
+	engine        *engine.Engine
+	hub           *ws.Hub
+	userLocks     *userMutexMap
+	tickState     *tickStateMap
+	bitcoinSvc    *bitcoin.PriceService
+	globalCUCache *GlobalDonatedCUCache
+	tickInterval  time.Duration
 }
 
 func NewGameHandler(
+	pool *pgxpool.Pool,
 	gameState *queries.GameStateQueries,
 	hardware *queries.HardwareQueries,
 	services *queries.ServiceQueries,
@@ -82,9 +150,11 @@ func NewGameHandler(
 	expenses *queries.ExpenseQueries,
 	coloRacks *queries.ColoRackQueries,
 	groups *queries.GroupQueries,
+	research *queries.ResearchLevelQueries,
 	eng *engine.Engine,
 	hub *ws.Hub,
 	bitcoinSvc *bitcoin.PriceService,
+	globalCUCache *GlobalDonatedCUCache,
 ) *GameHandler {
 	tick := defaultTickInterval
 	if s := os.Getenv("TICK_INTERVAL_SECONDS"); s != "" {
@@ -92,7 +162,7 @@ func NewGameHandler(
 			tick = time.Duration(v) * time.Second
 		}
 	}
-	return &GameHandler{gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, engine: eng, hub: hub, userLocks: newUserMutexMap(), bitcoinSvc: bitcoinSvc, tickInterval: tick}
+	return &GameHandler{pool: pool, gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, research: research, engine: eng, hub: hub, userLocks: newUserMutexMap(), tickState: newTickStateMap(), bitcoinSvc: bitcoinSvc, globalCUCache: globalCUCache, tickInterval: tick}
 }
 
 type fullStateResponse struct {
@@ -116,9 +186,10 @@ type fullStateResponse struct {
 	GlobalDonatedCU     int64                        `json:"global_donated_cu"`
 	BitcoinPrice        int64                        `json:"bitcoin_price"`
 	BitcoinPriceHistory []models.BitcoinPricePoint   `json:"bitcoin_price_history"`
+	ResearchLevels      []models.ResearchLevel       `json:"research_levels"`
 }
 
-func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, svcs []models.Service, ups []models.Upgrade, compUps []models.ComponentUpgrade, custs []models.Customer, exps []models.Expense, colos []models.ColoRack, evts []*events.GameEvent, btcPrice int64, btcHistory []models.BitcoinPricePoint) fullStateResponse {
+func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, svcs []models.Service, ups []models.Upgrade, compUps []models.ComponentUpgrade, custs []models.Customer, exps []models.Expense, colos []models.ColoRack, evts []*events.GameEvent, btcPrice int64, btcHistory []models.BitcoinPricePoint, researchLevels []models.ResearchLevel) fullStateResponse {
 	resp := fullStateResponse{
 		GameState:           gs,
 		Hardware:            hw,
@@ -136,6 +207,7 @@ func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, 
 		Throttled:           gs.ThrottleTicksRemaining > 0,
 		BitcoinPrice:        btcPrice,
 		BitcoinPriceHistory: btcHistory,
+		ResearchLevels:      researchLevels,
 	}
 	if gs.SaasUnlocked {
 		resp.AvailableSaas = catalog.GetAvailableSaasServices(gs.Tier)
@@ -274,24 +346,48 @@ func (h *GameHandler) fetchBitcoinData(ctx context.Context, now time.Time) (int6
 // state, and pushes the full state over WebSocket. It acquires the per-user
 // mutex to prevent concurrent state mutations with PerformAction.
 //
+// Ticks run in two modes:
+// - Full tick: loads all data from DB, runs engine, persists, pushes. Runs when
+//   the user is dirty (action occurred since last tick) or on first tick.
+// - Light tick: reuses cached child data from the last full tick, runs engine
+//   on the in-memory state, persists only the game_state row, pushes. Runs when
+//   the user is idle (no actions since last tick).
+//
 // Errors are returned to the caller for logging but are not fatal — a failed
 // tick is recovered on the next tick.
 func (h *GameHandler) runUserTick(ctx context.Context, userID string) error {
 	h.userLocks.Lock(userID)
 	defer h.userLocks.Unlock(userID)
 
-	gs, err := h.gameState.GetByUserID(ctx, userID)
+	ts := h.tickState.Get(userID)
+	if ts == nil {
+		ts = &userTickState{dirty: true}
+		h.tickState.Set(userID, ts)
+	}
+
+	if ts.dirty || ts.cachedData == nil || ts.cachedGS == nil {
+		return h.runFullTick(ctx, userID, ts)
+	}
+	return h.runLightTick(ctx, userID, ts)
+}
+
+// runFullTick loads all data from DB, runs engine processing, persists
+// everything, pushes state, and caches the results for future light ticks.
+func (h *GameHandler) runFullTick(ctx context.Context, userID string, ts *userTickState) error {
+	data, err := queries.LoadFullGameState(ctx, h.pool, userID)
 	if err != nil {
 		return err
 	}
 
-	hw, _ := h.hardware.GetByGameStateID(ctx, gs.ID)
-	svcs, _ := h.services.GetByGameStateID(ctx, gs.ID)
-	ups, _ := h.upgrades.GetByGameStateID(ctx, gs.ID)
-	custs, _ := h.customers.GetByGameStateID(ctx, gs.ID)
-	exps, _ := h.expenses.GetByGameStateID(ctx, gs.ID)
-	colos, _ := h.coloRacks.GetByUserID(ctx, userID)
-	compUps, _ := h.components.GetByGameStateID(ctx, gs.ID)
+	gs := data.GameState
+	hw := data.Hardware
+	svcs := data.Services
+	ups := data.Upgrades
+	custs := data.Customers
+	exps := data.Expenses
+	colos := data.ColoRacks
+	compUps := data.ComponentUps
+	researchLevels := data.ResearchLevels
 
 	now := time.Now()
 	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
@@ -300,7 +396,7 @@ func (h *GameHandler) runUserTick(ctx context.Context, userID string) error {
 		elapsed = 0
 	}
 
-	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, now)
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, researchLevels, now)
 
 	// Group bonus
 	groupBonus, groupMembers := h.getGroupBonus(ctx, userID)
@@ -350,10 +446,10 @@ func (h *GameHandler) runUserTick(ctx context.Context, userID string) error {
 	// Fetch bitcoin price and history
 	btcPrice, btcHistory := h.fetchBitcoinData(ctx, now)
 
-	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, btcPrice, btcHistory)
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, btcPrice, btcHistory, researchLevels)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
-	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(ctx)
+	resp.GlobalDonatedCU = h.globalCUCache.Get()
 
 	// Serialize the response and push as a "state" WS message
 	payload, err := json.Marshal(resp)
@@ -365,6 +461,114 @@ func (h *GameHandler) runUserTick(ctx context.Context, userID string) error {
 		Payload: payload,
 	})
 
+	// Cache state for future light ticks
+	ts.cachedGS = gs
+	ts.cachedData = &cachedChildData{
+		Hardware:          hw,
+		Services:          svcs,
+		Upgrades:          ups,
+		ComponentUpgrades: compUps,
+		ResearchLevels:    researchLevels,
+		Customers:         custs,
+		Expenses:          exps,
+		ColoRacks:         colos,
+		GroupBonus:        groupBonus,
+		GroupMembers:      groupMembers,
+	}
+	ts.lastPayload = payload
+	ts.dirty = false
+
+	return nil
+}
+
+// runLightTick reuses cached child data from the last full tick. It runs
+// ProcessIdleProgress on the in-memory game state, computes colo rack income
+// and group bonus from cached data, handles customer growth, and persists
+// only the game_state row (1 DB query instead of 14+).
+func (h *GameHandler) runLightTick(ctx context.Context, userID string, ts *userTickState) error {
+	gs := ts.cachedGS
+	cd := ts.cachedData
+
+	// We need a fresh copy of customers and services since processCustomerGrowth
+	// may append to them (and we need the updated slices for the cache).
+	custs := cd.Customers
+	svcs := cd.Services
+
+	now := time.Now()
+	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
+	elapsed := now.Sub(gs.LastTickAt).Seconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	triggered := h.engine.ProcessIdleProgress(gs, cd.Hardware, svcs, cd.Upgrades, cd.Expenses, custs, cd.ComponentUpgrades, cd.ResearchLevels, now)
+
+	// Colo rack passive income from cached colo racks
+	dcMult := gs.DatacenterIncomeMultiplier
+	if dcMult < 1.0 {
+		dcMult = 1.0
+	}
+	for i, cr := range cd.ColoRacks {
+		decay := math.Pow(0.9, float64(i))
+		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * elapsed * dcMult * decay)
+		gs.Reputation += int64(float64(cr.ReputationPerTick) * elapsed * dcMult * decay)
+		gs.Money += int64(float64(cr.MoneyPerTick) * elapsed * dcMult * decay)
+	}
+
+	// Group bonus from cached values (group membership changes are infrequent)
+	groupBonus := cd.GroupBonus
+	groupMembers := cd.GroupMembers
+	if groupBonus > 1.0 {
+		var idleCompute int64
+		for _, item := range cd.Hardware {
+			idleCompute += int64(item.ComputePerTick)
+		}
+		for _, s := range svcs {
+			idleCompute += int64(s.ComputePerTick)
+		}
+		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
+		gs.ComputeUnits += groupExtra
+	}
+
+	// Customer growth for SaaS services (may create new customers — these DO need DB writes)
+	if gs.SaasUnlocked {
+		custs, svcs = h.processCustomerGrowth(ctx, gs, custs, svcs, now)
+		// Update cached slices in case customers/services grew
+		cd.Customers = custs
+		cd.Services = svcs
+	}
+
+	// Persist ONLY the game_state update (1 DB query)
+	if err := h.gameState.Update(ctx, gs); err != nil {
+		return err
+	}
+
+	if len(triggered) > 0 {
+		h.pushEvents(userID, triggered)
+	}
+
+	// Fetch bitcoin price from in-memory PriceService (no DB query)
+	btcPrice, btcHistory := h.fetchBitcoinData(ctx, now)
+
+	globalDonatedCU := h.globalCUCache.Get()
+
+	resp := h.buildResponse(gs, cd.Hardware, svcs, cd.Upgrades, cd.ComponentUpgrades, custs, cd.Expenses, cd.ColoRacks, triggered, btcPrice, btcHistory, cd.ResearchLevels)
+	resp.GroupBonus = groupBonus
+	resp.GroupMembers = groupMembers
+	resp.GlobalDonatedCU = globalDonatedCU
+
+	// Serialize the response and push as a "state" WS message
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	h.hub.SendToUser(userID, ws.Message{
+		Type:    "state",
+		Payload: payload,
+	})
+
+	ts.lastPayload = payload
+
 	return nil
 }
 
@@ -373,6 +577,9 @@ func (h *GameHandler) runUserTick(ctx context.Context, userID string) error {
 // configured interval. The goroutine exits when the done channel is closed
 // (client disconnected).
 func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
+	// Initialize dirty state — first tick always runs as a full tick.
+	h.tickState.Set(userID, &userTickState{dirty: true})
+
 	go func() {
 		log.Printf("[tick] goroutine started for user %s (interval=%s)", userID, h.tickInterval)
 		defer log.Printf("[tick] goroutine stopped for user %s", userID)
@@ -382,16 +589,20 @@ func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
 
 		// Immediate state push on connect (handles reconnection — client
 		// gets state right away without waiting for the first tick).
-		if err := h.runUserTick(context.Background(), userID); err != nil {
+		initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := h.runUserTick(initCtx, userID); err != nil {
 			log.Printf("[tick] initial tick error for user %s: %v", userID, err)
 		}
+		initCancel()
 
 		for {
 			select {
 			case <-ticker.C:
-				if err := h.runUserTick(context.Background(), userID); err != nil {
+				tickCtx, tickCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := h.runUserTick(tickCtx, userID); err != nil {
 					log.Printf("[tick] error for user %s: %v", userID, err)
 				}
+				tickCancel()
 			case <-done:
 				return
 			}
@@ -403,6 +614,7 @@ func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
 // tick goroutine is already stopped by the done channel closure; this method
 // exists for observability logging and any future cleanup needs.
 func (h *GameHandler) OnDisconnect(userID string) {
+	h.tickState.Delete(userID)
 	log.Printf("[tick] user %s disconnected", userID)
 }
 
@@ -415,19 +627,21 @@ func (h *GameHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
-	gs, err := h.gameState.GetByUserID(r.Context(), userID)
+	data, err := queries.LoadFullGameState(r.Context(), h.pool, userID)
 	if err != nil {
 		http.Error(w, `{"error":"game state not found"}`, http.StatusNotFound)
 		return
 	}
 
-	hw, _ := h.hardware.GetByGameStateID(r.Context(), gs.ID)
-	svcs, _ := h.services.GetByGameStateID(r.Context(), gs.ID)
-	ups, _ := h.upgrades.GetByGameStateID(r.Context(), gs.ID)
-	custs, _ := h.customers.GetByGameStateID(r.Context(), gs.ID)
-	exps, _ := h.expenses.GetByGameStateID(r.Context(), gs.ID)
-	colos, _ := h.coloRacks.GetByUserID(r.Context(), userID)
-	compUps, _ := h.components.GetByGameStateID(r.Context(), gs.ID)
+	gs := data.GameState
+	hw := data.Hardware
+	svcs := data.Services
+	ups := data.Upgrades
+	custs := data.Customers
+	exps := data.Expenses
+	colos := data.ColoRacks
+	compUps := data.ComponentUps
+	researchLevels := data.ResearchLevels
 
 	now := time.Now()
 	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
@@ -436,7 +650,7 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		elapsed = 0
 	}
 
-	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, now)
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, researchLevels, now)
 
 	// Group bonus
 	groupBonus, groupMembers := h.getGroupBonus(r.Context(), userID)
@@ -488,10 +702,10 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	// Fetch current bitcoin price and history for the response
 	btcPrice, btcHistory := h.fetchBitcoinData(r.Context(), now)
 
-	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, btcPrice, btcHistory)
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, btcPrice, btcHistory, researchLevels)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
-	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())
+	resp.GlobalDonatedCU = h.globalCUCache.Get()
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -513,19 +727,21 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gs, err := h.gameState.GetByUserID(r.Context(), userID)
+	data, err := queries.LoadFullGameState(r.Context(), h.pool, userID)
 	if err != nil {
 		http.Error(w, `{"error":"game state not found"}`, http.StatusNotFound)
 		return
 	}
 
-	hw, _ := h.hardware.GetByGameStateID(r.Context(), gs.ID)
-	svcs, _ := h.services.GetByGameStateID(r.Context(), gs.ID)
-	ups, _ := h.upgrades.GetByGameStateID(r.Context(), gs.ID)
-	custs, _ := h.customers.GetByGameStateID(r.Context(), gs.ID)
-	exps, _ := h.expenses.GetByGameStateID(r.Context(), gs.ID)
-	colos, _ := h.coloRacks.GetByUserID(r.Context(), userID)
-	compUps, _ := h.components.GetByGameStateID(r.Context(), gs.ID)
+	gs := data.GameState
+	hw := data.Hardware
+	svcs := data.Services
+	ups := data.Upgrades
+	custs := data.Customers
+	exps := data.Expenses
+	colos := data.ColoRacks
+	compUps := data.ComponentUps
+	researchLevels := data.ResearchLevels
 
 	now := time.Now()
 	// Capture elapsed seconds BEFORE ProcessIdleProgress updates LastTickAt
@@ -534,7 +750,7 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		elapsed = 0
 	}
 
-	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, now)
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, researchLevels, now)
 
 	// Group bonus
 	groupBonus, groupMembers := h.getGroupBonus(r.Context(), userID)
@@ -579,7 +795,7 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps, currentBitcoinPrice)
+	result, err := h.engine.ProcessAction(gs, req.Type, req.Payload, hw, svcs, ups, compUps, researchLevels, currentBitcoinPrice)
 	if err != nil {
 		errMsg, _ := json.Marshal(map[string]string{"error": err.Error()})
 		http.Error(w, string(errMsg), http.StatusBadRequest)
@@ -711,9 +927,25 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for i := range custs {
-		h.customers.Update(r.Context(), &custs[i])
+	// Mark user as dirty so the next tick runs a full DB reload.
+	// The action may have changed child tables (bought hardware, sold services,
+	// prestige wipe, etc.), so the light tick's cached data would be stale.
+	h.tickState.MarkDirty(userID)
+
+	// Update global donated CU cache immediately after a successful donate_cu
+	// so the response reflects the donation without waiting for periodic refresh.
+	if req.Type == "donate_cu" {
+		var dp struct {
+			Amount int64 `json:"amount"`
+		}
+		if json.Unmarshal(req.Payload, &dp) == nil && dp.Amount > 0 {
+			h.globalCUCache.Add(dp.Amount)
+		}
 	}
+
+	// Note: customer satisfaction is recalculated by ProcessIdleProgress on
+	// every state load. The per-customer Update loop was removed — it was
+	// issuing N UPDATE queries with unchanged data on every action.
 
 	if len(triggered) > 0 {
 		h.pushEvents(userID, triggered)
@@ -730,10 +962,10 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, currentBitcoinPrice, btcHistory)
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, currentBitcoinPrice, btcHistory, researchLevels)
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
-	resp.GlobalDonatedCU, _ = h.gameState.GetGlobalDonatedCU(r.Context())
+	resp.GlobalDonatedCU = h.globalCUCache.Get()
 	json.NewEncoder(w).Encode(resp)
 
 	// Push the same state over WebSocket for immediate client refresh.
@@ -746,5 +978,316 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 			Type:    "state",
 			Payload: stateJSON,
 		})
+	}
+}
+
+// wsActionRequest is the expected JSON format for WebSocket action messages.
+type wsActionRequest struct {
+	Type    string          `json:"type"`
+	ID      string          `json:"id"`
+	Action  string          `json:"action"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+// wsActionResult is the JSON response sent back over WebSocket after processing an action.
+type wsActionResult struct {
+	Type    string             `json:"type"`
+	ID      string             `json:"id"`
+	Success bool               `json:"success"`
+	State   *fullStateResponse `json:"state,omitempty"`
+	Error   string             `json:"error,omitempty"`
+}
+
+// actionError is a structured error type for WebSocket action processing.
+// It classifies errors so HandleWSAction can mask internal details from clients
+// (security: don't leak database errors, stack traces, etc.).
+type actionError struct {
+	msg      string // human-readable error message
+	internal bool   // true = server/infrastructure error (masked for client)
+	notFound bool   // true = requested resource was not found
+}
+
+func (e *actionError) Error() string {
+	return e.msg
+}
+
+// HandleWSAction processes a game action received over WebSocket. It is called
+// from the hub's OnMessage callback (via a goroutine in main.go).
+func (h *GameHandler) HandleWSAction(userID string, data []byte) {
+	var req wsActionRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return // malformed JSON — silently drop
+	}
+
+	// Only process "action" messages; ignore anything else.
+	if req.Type != "action" {
+		return
+	}
+
+	// Require a request ID for response correlation.
+	if req.ID == "" {
+		result := wsActionResult{
+			Type:    "action_result",
+			ID:      "",
+			Success: false,
+			Error:   "missing request id",
+		}
+		if resData, err := json.Marshal(result); err == nil {
+			h.hub.SendToUserBytes(userID, resData)
+		}
+		return
+	}
+
+	// Rate limit check
+	if !middleware.CheckGameActionRate(userID) {
+		result := wsActionResult{
+			Type:    "action_result",
+			ID:      req.ID,
+			Success: false,
+			Error:   "rate limited",
+		}
+		if resData, err := json.Marshal(result); err == nil {
+			h.hub.SendToUserBytes(userID, resData)
+		}
+		return
+	}
+
+	// Track whether the per-user mutex is held so the panic recovery can
+	// release it. HandleWSAction unlocks manually at multiple exit points
+	// rather than using a single defer, so a panic between Lock and Unlock
+	// would deadlock all subsequent actions for this user.
+	locked := false
+
+	// Recover from panics in the action processing goroutine. An unrecovered
+	// panic here would crash the entire process since HandleWSAction runs in
+	// a goroutine spawned by the hub's OnMessage callback.
+	defer func() {
+		if r := recover(); r != nil {
+			if locked {
+				h.userLocks.Unlock(userID)
+			}
+			log.Printf("[ws-action] user=%s action=%s id=%s panic=%v", userID, req.Action, req.ID, r)
+			result := wsActionResult{
+				Type:    "action_result",
+				ID:      req.ID,
+				Success: false,
+				Error:   "internal server error",
+			}
+			if resData, err := json.Marshal(result); err == nil {
+				h.hub.SendToUserBytes(userID, resData)
+			}
+		}
+	}()
+
+	// Lock per-user to prevent race conditions
+	h.userLocks.Lock(userID)
+	locked = true
+
+	ctx := context.WithValue(context.Background(), middleware.UserIDKey, userID)
+	tickCtx, tickCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer tickCancel()
+
+	data2, err := queries.LoadFullGameState(tickCtx, h.pool, userID)
+	if err != nil {
+		h.userLocks.Unlock(userID)
+		locked = false
+		result := wsActionResult{
+			Type:    "action_result",
+			ID:      req.ID,
+			Success: false,
+			Error:   "internal server error",
+		}
+		if resData, err := json.Marshal(result); err == nil {
+			h.hub.SendToUserBytes(userID, resData)
+		}
+		return
+	}
+
+	gs := data2.GameState
+	hw := data2.Hardware
+	svcs := data2.Services
+	ups := data2.Upgrades
+	custs := data2.Customers
+	exps := data2.Expenses
+	colos := data2.ColoRacks
+	compUps := data2.ComponentUps
+	researchLevels := data2.ResearchLevels
+
+	now := time.Now()
+	elapsed := now.Sub(gs.LastTickAt).Seconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	triggered := h.engine.ProcessIdleProgress(gs, hw, svcs, ups, exps, custs, compUps, researchLevels, now)
+
+	groupBonus, groupMembers := h.getGroupBonus(tickCtx, userID)
+
+	dcMult := gs.DatacenterIncomeMultiplier
+	if dcMult < 1.0 {
+		dcMult = 1.0
+	}
+	for i, cr := range colos {
+		decay := math.Pow(0.9, float64(i))
+		gs.ComputeUnits += int64(float64(cr.ComputePerTick) * elapsed * dcMult * decay)
+		gs.Reputation += int64(float64(cr.ReputationPerTick) * elapsed * dcMult * decay)
+		gs.Money += int64(float64(cr.MoneyPerTick) * elapsed * dcMult * decay)
+	}
+
+	if groupBonus > 1.0 {
+		idleCompute := int64(0)
+		for _, item := range hw {
+			idleCompute += int64(item.ComputePerTick)
+		}
+		for _, s := range svcs {
+			idleCompute += int64(s.ComputePerTick)
+		}
+		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
+		gs.ComputeUnits += groupExtra
+	}
+
+	if gs.SaasUnlocked {
+		custs, svcs = h.processCustomerGrowth(tickCtx, gs, custs, svcs, now)
+	}
+
+	currentBitcoinPrice, btcHistory := h.fetchBitcoinData(tickCtx, now)
+
+	result, actionErr := h.engine.ProcessAction(gs, req.Action, req.Payload, hw, svcs, ups, compUps, researchLevels, currentBitcoinPrice)
+	if actionErr != nil {
+		h.userLocks.Unlock(userID)
+		locked = false
+		res := wsActionResult{
+			Type:    "action_result",
+			ID:      req.ID,
+			Success: false,
+			Error:   actionErr.Error(),
+		}
+		if resData, err := json.Marshal(res); err == nil {
+			h.hub.SendToUserBytes(userID, resData)
+		}
+		return
+	}
+
+	// Persist action results
+	if result.NewHardware != nil {
+		h.hardware.Create(tickCtx, result.NewHardware)
+		hw = append(hw, *result.NewHardware)
+	}
+	if result.RemoveHardware != "" {
+		h.hardware.DeleteByID(tickCtx, result.RemoveHardware)
+		filtered := hw[:0]
+		for _, item := range hw {
+			if item.ID != result.RemoveHardware {
+				filtered = append(filtered, item)
+			}
+		}
+		hw = filtered
+	}
+	if result.NewService != nil {
+		h.services.Create(tickCtx, result.NewService)
+		svcs = append(svcs, *result.NewService)
+	}
+	if result.NewUpgrade != nil {
+		h.upgrades.Create(tickCtx, result.NewUpgrade)
+		ups = append(ups, *result.NewUpgrade)
+	}
+	if result.NewCustomer != nil {
+		h.customers.Create(tickCtx, result.NewCustomer)
+		custs = append(custs, *result.NewCustomer)
+	}
+	for i := range result.NewExpenses {
+		h.expenses.Create(tickCtx, &result.NewExpenses[i])
+		exps = append(exps, result.NewExpenses[i])
+	}
+	if result.ComponentUpgrade != nil {
+		h.components.Upsert(tickCtx, result.ComponentUpgrade)
+	}
+	// Bulk persistence
+	for i := range result.NewServices {
+		h.services.Create(tickCtx, &result.NewServices[i])
+		svcs = append(svcs, result.NewServices[i])
+	}
+	for i := range result.NewUpgrades {
+		h.upgrades.Create(tickCtx, &result.NewUpgrades[i])
+		ups = append(ups, result.NewUpgrades[i])
+	}
+	for i := range result.NewCustomers {
+		h.customers.Create(tickCtx, &result.NewCustomers[i])
+		custs = append(custs, result.NewCustomers[i])
+	}
+	for i := range result.ComponentUpgrades {
+		h.components.Upsert(tickCtx, &result.ComponentUpgrades[i])
+		found := false
+		for j := range compUps {
+			if compUps[j].HardwareID == result.ComponentUpgrades[i].HardwareID && compUps[j].Component == result.ComponentUpgrades[i].Component {
+				compUps[j] = result.ComponentUpgrades[i]
+				found = true
+				break
+			}
+		}
+		if !found {
+			compUps = append(compUps, result.ComponentUpgrades[i])
+		}
+	}
+
+	if result.Prestige {
+		h.hardware.DeleteByGameStateID(tickCtx, gs.ID)
+		h.services.DeleteByGameStateID(tickCtx, gs.ID)
+		h.customers.DeleteByGameStateID(tickCtx, gs.ID)
+		h.expenses.DeleteByGameStateID(tickCtx, gs.ID)
+		h.upgrades.DeleteNonPersistent(tickCtx, gs.ID)
+		hw = nil
+		svcs = nil
+		custs = nil
+		exps = nil
+		var persistentUps []models.Upgrade
+		for _, u := range ups {
+			if u.Persistent {
+				persistentUps = append(persistentUps, u)
+			}
+		}
+		ups = persistentUps
+	}
+
+	if result.NewColoRack != nil {
+		h.coloRacks.Create(tickCtx, result.NewColoRack)
+		colos = append(colos, *result.NewColoRack)
+	}
+
+	h.gameState.Update(tickCtx, gs)
+
+	// Update global donated CU cache for donate_cu actions
+	if req.Action == "donate_cu" {
+		var dp struct {
+			Amount int64 `json:"amount"`
+		}
+		if json.Unmarshal(req.Payload, &dp) == nil && dp.Amount > 0 {
+			h.globalCUCache.Add(dp.Amount)
+		}
+	}
+
+	// Mark dirty for next tick
+	h.tickState.MarkDirty(userID)
+
+	h.userLocks.Unlock(userID)
+	locked = false
+
+	if len(triggered) > 0 {
+		h.pushEvents(userID, triggered)
+	}
+
+	resp := h.buildResponse(gs, hw, svcs, ups, compUps, custs, exps, colos, triggered, currentBitcoinPrice, btcHistory, researchLevels)
+	resp.GroupBonus = groupBonus
+	resp.GroupMembers = groupMembers
+	resp.GlobalDonatedCU = h.globalCUCache.Get()
+
+	res := wsActionResult{
+		Type:    "action_result",
+		ID:      req.ID,
+		Success: true,
+		State:   &resp,
+	}
+	if resData, err := json.Marshal(res); err == nil {
+		h.hub.SendToUserBytes(userID, resData)
 	}
 }

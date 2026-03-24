@@ -20,6 +20,7 @@ const gsColumns = `id, user_id, tier, compute_units, reputation, power_watts, po
 	colo_count, colo_multiplier, heat_generated, cooling_capacity,
 	network_tier, automation_tier, knowledge_points, idle_multiplier,
 	saas_unlocked, total_customers, throttle_multiplier, throttle_ticks_remaining,
+	overclock_multiplier, overclock_ticks_remaining, rack_optimization,
 	datacenter_tier, owns_datacenter, datacenter_level, datacenter_income_multiplier,
 	total_donated_cu, bitcoin_balance, last_customer_growth_at, last_tick_at, created_at, updated_at`
 
@@ -31,7 +32,9 @@ func gsFields(gs *models.GameState) []any {
 		&gs.RackUnits, &gs.UsedRackUnits, &gs.ColoCount, &gs.ColoMultiplier,
 		&gs.HeatGenerated, &gs.CoolingCapacity, &gs.NetworkTier, &gs.AutomationTier,
 		&gs.KnowledgePoints, &gs.IdleMultiplier, &gs.SaasUnlocked, &gs.TotalCustomers,
-		&gs.ThrottleMultiplier, &gs.ThrottleTicksRemaining, &gs.DatacenterTier,
+		&gs.ThrottleMultiplier, &gs.ThrottleTicksRemaining,
+		&gs.OverclockMultiplier, &gs.OverclockTicksRemaining, &gs.RackOptimization,
+		&gs.DatacenterTier,
 		&gs.OwnsDatacenter, &gs.DatacenterLevel, &gs.DatacenterIncomeMultiplier,
 		&gs.TotalDonatedCU, &gs.BitcoinBalance, &gs.LastCustomerGrowthAt, &gs.LastTickAt, &gs.CreatedAt, &gs.UpdatedAt)
 }
@@ -69,17 +72,21 @@ func (q *GameStateQueries) Update(ctx context.Context, gs *models.GameState) err
 		    network_tier = $16, automation_tier = $17, knowledge_points = $18,
 		    idle_multiplier = $19, saas_unlocked = $20, total_customers = $21,
 		    throttle_multiplier = $22, throttle_ticks_remaining = $23,
-		    datacenter_tier = $24, owns_datacenter = $25, datacenter_level = $26,
-		    datacenter_income_multiplier = $27, total_donated_cu = $28,
-		    bitcoin_balance = $29, last_customer_growth_at = $30,
-		    last_tick_at = $31, updated_at = NOW()
-		 WHERE id = $1 AND user_id = $32`,
+		    overclock_multiplier = $24, overclock_ticks_remaining = $25,
+		    rack_optimization = $26,
+		    datacenter_tier = $27, owns_datacenter = $28, datacenter_level = $29,
+		    datacenter_income_multiplier = $30, total_donated_cu = $31,
+		    bitcoin_balance = $32, last_customer_growth_at = $33,
+		    last_tick_at = $34, updated_at = NOW()
+		 WHERE id = $1 AND user_id = $35`,
 		gs.ID, gs.Tier, gs.ComputeUnits, gs.Reputation, gs.PowerWatts,
 		gs.PowerLimit, gs.Money, gs.HardwareSlots, gs.UsedSlots,
 		gs.RackUnits, gs.UsedRackUnits, gs.ColoCount, gs.ColoMultiplier,
 		gs.HeatGenerated, gs.CoolingCapacity, gs.NetworkTier, gs.AutomationTier,
 		gs.KnowledgePoints, gs.IdleMultiplier, gs.SaasUnlocked, gs.TotalCustomers,
-		gs.ThrottleMultiplier, gs.ThrottleTicksRemaining, gs.DatacenterTier,
+		gs.ThrottleMultiplier, gs.ThrottleTicksRemaining,
+		gs.OverclockMultiplier, gs.OverclockTicksRemaining, gs.RackOptimization,
+		gs.DatacenterTier,
 		gs.OwnsDatacenter, gs.DatacenterLevel, gs.DatacenterIncomeMultiplier,
 		gs.TotalDonatedCU, gs.BitcoinBalance, gs.LastCustomerGrowthAt, gs.LastTickAt, gs.UserID)
 	return err

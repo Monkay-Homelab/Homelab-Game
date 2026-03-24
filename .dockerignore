@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+apps/desktop/dist/
+apps/backend/cmd/server/server
+
+# Git
+.git/
+.gitmodules
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Env files (secrets must come from K8s Secrets, not baked into images)
+.env
+apps/backend/.env
+
+# Docs and non-runtime files
+docs/
+stress-tests/
+apps/stress-tests/
+*.md
+
+# Tauri (desktop-only, not needed in container)
+apps/desktop/src-tauri/

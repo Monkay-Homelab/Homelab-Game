@@ -73,6 +73,11 @@ export interface GameState {
   group_bonus: number;
   group_members: number;
   global_donated_cu: number;
+  overclock_multiplier: number;
+  overclock_ticks_remaining: number;
+  overclocked: boolean;
+  rack_optimization: number;
+  research_levels: ResearchLevelItem[];
   bitcoin_balance: number;
   bitcoin_price: number;
   bitcoin_price_history: BitcoinPricePoint[];
@@ -81,6 +86,14 @@ export interface GameState {
 export interface BitcoinPricePoint {
   time: string;
   price: number;
+}
+
+export interface ResearchLevelItem {
+  id: string;
+  game_state_id: string;
+  research_node: string;
+  level: number;
+  updated_at: string;
 }
 
 export interface ColoRackItem {
@@ -210,6 +223,9 @@ export interface GameConfig {
   leaderboard: LeaderboardConfig;
   group: GroupConfig;
   bitcoin: BitcoinConfig;
+  overclock: OverclockConfig;
+  research: ResearchConfig;
+  rack_optimization: RackOptimizationConfig;
 }
 
 export interface BitcoinConfig {
@@ -281,6 +297,42 @@ export interface GroupConfig {
   bonus_per_member: number;
   max_bonus: number;
   description: string;
+}
+
+export interface OverclockConfig {
+  tiers: OverclockTierConfig[];
+  tick_interval_seconds: number;
+}
+
+export interface OverclockTierConfig {
+  tier: number;
+  multiplier: number;
+  cost: number;
+  duration: number;
+  heat_factor: number;
+  label: string;
+}
+
+export interface ResearchConfig {
+  nodes: ResearchNodeConfig[];
+}
+
+export interface ResearchNodeConfig {
+  id: string;
+  name: string;
+  branch: string;
+  min_tier: string;
+  base_cost: number;
+  cost_scale: number;
+  effect_type: string;
+  effect_value: number;
+  description: string;
+}
+
+export interface RackOptimizationConfig {
+  base_cost: number;
+  cost_multiplier: number;
+  bonus_per_level: number;
 }
 
 export const api = {

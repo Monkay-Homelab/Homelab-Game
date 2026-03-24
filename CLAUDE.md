@@ -48,8 +48,11 @@ Monorepo with three main components:
 ```bash
 cd apps/backend
 go build ./cmd/server/          # Build the server
-go run ./cmd/server/            # Run the server (port 8080)
 go test ./...                   # Run all tests
+
+# Restart the backend (kill old process, start new one)
+lsof -ti:8080 | xargs kill -9; sleep 1; cd /root/project/apps/backend && go run ./cmd/server/ &>/tmp/backend.log &
+tail -f /tmp/backend.log        # Watch logs
 ```
 
 ### Desktop (Tauri + React)
@@ -72,8 +75,11 @@ pnpm typecheck                  # TypeScript type checking
 ### Database
 
 ```bash
-# Apply migrations (as postgres user)
-su - postgres -c "psql -d homelab_game -f /path/to/migration.sql"
+# Apply migrations (pipe to psql to avoid file permission issues)
+cat /root/project/apps/backend/internal/database/migrations/NNN_name.sql | sudo -u postgres psql -d homelab_game
+
+# Grant permissions on new tables (db user is homelab_game)
+echo "GRANT ALL ON <table_name> TO homelab_game;" | sudo -u postgres psql -d homelab_game
 ```
 
 ### Monorepo
@@ -100,3 +106,14 @@ pnpm install                    # Install all workspace dependencies
 - Game uses a tick system on the backend to calculate idle progress, process events, and update state.
 - Prestige system ("Colo") resets the player to the coffee table tier but keeps automation/knowledge upgrades and colo'd racks earning passively.
 - Infrastructure is self-hosted on a homelab VM.
+- Live at https://game.homelab.living/ (API at https://api.homelab.living/).
+
+## Deployment
+
+Everything runs on this single VM. There are no separate environments (dev/staging/prod).
+
+- **Backend**: `go run ./cmd/server/` on port 8080, run as a background process. Restart by killing the old process and starting a new one (see Common Commands above).
+- **Frontend**: Vite dev server on port 3000 or built static files served directly.
+- **Reverse proxy (nginx)**: Handled externally, NOT on this VM. Nginx proxies `api.homelab.living` → `:8080` and `game.homelab.living` → `:3000`. Do not look for nginx config on this machine.
+- **Database**: PostgreSQL 16 + TimescaleDB running locally. DB user is `homelab_game`, database is `homelab_game`.
+- **After code changes**: Rebuild and restart the backend process. No deploy pipeline — the code runs directly from this repo.

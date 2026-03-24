@@ -19,7 +19,7 @@ func New() *Engine {
 
 // ProcessIdleProgress calculates resources earned since the last tick.
 // Returns any events that triggered during the elapsed time.
-func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, expenses []models.Expense, customers []models.Customer, compUpgrades []models.ComponentUpgrade, now time.Time) []*events.GameEvent {
+func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, expenses []models.Expense, customers []models.Customer, compUpgrades []models.ComponentUpgrade, researchLevels []models.ResearchLevel, now time.Time) []*events.GameEvent {
 	elapsed := now.Sub(gs.LastTickAt)
 	seconds := elapsed.Seconds()
 
@@ -96,6 +96,12 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	gs.PowerWatts = totalHeat + servicePower
 	gs.HeatGenerated = gs.PowerWatts
 
+	// Overclock extra heat: (multiplier - 1) * heat
+	if gs.OverclockTicksRemaining > 0 && gs.OverclockMultiplier > 1.0 {
+		overclockHeat := int(float64(gs.HeatGenerated) * (gs.OverclockMultiplier - 1.0))
+		gs.HeatGenerated += overclockHeat
+	}
+
 	// Recalculate cooling capacity from base + tier + owned cooling upgrades
 	baseCooling := 50
 	tierBonus := tierCoolingBonus(gs.Tier)
@@ -139,6 +145,37 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 		}
 	}
 
+	// Calculate overclock weighted-average multiplier for this period (before decaying ticks)
+	overclockMult := 1.0
+	if gs.OverclockTicksRemaining > 0 {
+		overclockDurationSec := float64(gs.OverclockTicksRemaining) * 5.0
+		if seconds <= overclockDurationSec {
+			// Entire period was overclocked
+			overclockMult = gs.OverclockMultiplier
+		} else {
+			// Partial: weighted average
+			overclockFraction := overclockDurationSec / seconds
+			overclockMult = gs.OverclockMultiplier*overclockFraction + 1.0*(1.0-overclockFraction)
+		}
+	}
+	// Defensive guard: overclock should never reduce income
+	if overclockMult < 1.0 {
+		overclockMult = 1.0
+	}
+
+	// Decay overclock over time (time-based, not per-call)
+	if gs.OverclockTicksRemaining > 0 {
+		elapsedTicks := int(seconds / 5.0)
+		if elapsedTicks < 1 {
+			elapsedTicks = 1
+		}
+		gs.OverclockTicksRemaining -= elapsedTicks
+		if gs.OverclockTicksRemaining <= 0 {
+			gs.OverclockMultiplier = 1.0
+			gs.OverclockTicksRemaining = 0
+		}
+	}
+
 	// Overheat penalty: if heat exceeds cooling, throttle by 50%
 	heatPenalty := 1.0
 	if gs.HeatGenerated > gs.CoolingCapacity {
@@ -148,7 +185,7 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	// Event throttle
 	eventThrottle := gs.ThrottleMultiplier
 
-	totalMultiplier := gs.ColoMultiplier * gs.IdleMultiplier * heatPenalty * eventThrottle
+	totalMultiplier := gs.ColoMultiplier * gs.IdleMultiplier * heatPenalty * eventThrottle * overclockMult
 
 	// Knowledge points boost: +1% per knowledge point
 	knowledgeBoost := 1.0 + float64(gs.KnowledgePoints)/100.0
@@ -159,9 +196,15 @@ func (e *Engine) ProcessIdleProgress(gs *models.GameState, hardware []models.Har
 	// Storage + patch panel bonus: boost reputation income
 	repMult := 1.0 + storageBonus + patchPanelBonus
 
-	gs.ComputeUnits += int64(float64(totalCompute) * seconds * totalMultiplier * knowledgeBoost * netMult)
-	gs.Reputation += int64(float64(serviceRep) * seconds * heatPenalty * eventThrottle * repMult)
-	gs.Money += int64(float64(serviceMoney) * seconds * heatPenalty * eventThrottle)
+	// Research bonuses: aggregate by effect type and apply as multipliers
+	researchBonuses := aggregateResearchBonuses(researchLevels)
+	researchIdleMult := 1.0 + researchBonuses["idle_income"]
+	researchRepMult := 1.0 + researchBonuses["reputation_gain"]
+	researchMoneyMult := 1.0 + researchBonuses["money_income"]
+
+	gs.ComputeUnits += int64(float64(totalCompute) * seconds * totalMultiplier * knowledgeBoost * netMult * researchIdleMult)
+	gs.Reputation += int64(float64(serviceRep) * seconds * heatPenalty * eventThrottle * repMult * researchRepMult)
+	gs.Money += int64(float64(serviceMoney) * seconds * heatPenalty * eventThrottle * researchMoneyMult)
 
 	// Deduct business expenses from money
 	var totalExpenses int64
@@ -231,10 +274,10 @@ func countShelfCapacity(hardware []models.Hardware) int {
 
 // ProcessAction validates and applies a player action.
 // currentBitcoinPrice is the server-resolved Bitcoin price; only used by buy_bitcoin/sell_bitcoin actions (0 for all others).
-func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload json.RawMessage, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, compUpgrades []models.ComponentUpgrade, currentBitcoinPrice int64) (*ActionResult, error) {
+func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload json.RawMessage, hardware []models.Hardware, services []models.Service, upgrades []models.Upgrade, compUpgrades []models.ComponentUpgrade, researchLevels []models.ResearchLevel, currentBitcoinPrice int64) (*ActionResult, error) {
 	switch actionType {
 	case "run_job":
-		return e.runJob(gs)
+		return e.runJob(gs, researchLevels)
 	case "buy_hardware":
 		return e.buyHardware(gs, payload, hardware)
 	case "deploy_service":
@@ -271,8 +314,20 @@ func (e *Engine) ProcessAction(gs *models.GameState, actionType string, payload 
 		return e.upgradeDatacenter(gs)
 	case "buy_bitcoin":
 		return e.buyBitcoin(gs, payload, currentBitcoinPrice)
+	case "buy_max_bitcoin":
+		return e.buyMaxBitcoin(gs, currentBitcoinPrice)
 	case "sell_bitcoin":
 		return e.sellBitcoin(gs, payload, currentBitcoinPrice)
+	case "sell_all_bitcoin":
+		return e.sellAllBitcoin(gs, currentBitcoinPrice)
+	case "activate_overclock":
+		return e.activateOverclock(gs, payload)
+	case "buy_research":
+		return e.buyResearch(gs, payload, researchLevels)
+	case "bulk_buy_research":
+		return e.bulkBuyResearch(gs, payload, researchLevels)
+	case "optimize_rack":
+		return e.optimizeRack(gs)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", actionType)
 	}
@@ -291,15 +346,18 @@ type ActionResult struct {
 	NewColoRack       *models.ColoRack
 	ComponentUpgrade  *models.ComponentUpgrade
 	ComponentUpgrades []models.ComponentUpgrade
+	ResearchLevel     *models.ResearchLevel
 	RemoveHardware    string // hardware ID to delete
 	Prestige          bool   // if true, handler should wipe non-persistent data
 }
 
-func (e *Engine) runJob(gs *models.GameState) (*ActionResult, error) {
+func (e *Engine) runJob(gs *models.GameState, researchLevels []models.ResearchLevel) (*ActionResult, error) {
 	reward := tierJobReward(gs.Tier)
 	// Clicks only get knowledge boost — colo multiplier applies to idle income only
 	knowledgeBoost := 1.0 + float64(gs.KnowledgePoints)/100.0
-	gs.ComputeUnits += int64(float64(reward) * knowledgeBoost)
+	researchBonuses := aggregateResearchBonuses(researchLevels)
+	researchJobMult := 1.0 + researchBonuses["job_reward"]
+	gs.ComputeUnits += int64(float64(reward) * knowledgeBoost * researchJobMult)
 	return &ActionResult{}, nil
 }
 
@@ -718,6 +776,25 @@ func (e *Engine) upgradeComponent(gs *models.GameState, payload json.RawMessage,
 	return &ActionResult{ComponentUpgrade: cu}, nil
 }
 
+func (e *Engine) optimizeRack(gs *models.GameState) (*ActionResult, error) {
+	if gs.Tier != models.TierRack48U {
+		return nil, fmt.Errorf("must be at 48U rack tier to optimize")
+	}
+	if !gs.SaasUnlocked {
+		return nil, fmt.Errorf("must have SaaS unlocked to optimize")
+	}
+	if gs.RackOptimization >= 46 {
+		return nil, fmt.Errorf("optimization level at maximum")
+	}
+	cost := int64(100000) << uint(gs.RackOptimization)
+	if gs.ComputeUnits < cost {
+		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", cost, gs.ComputeUnits)
+	}
+	gs.ComputeUnits -= cost
+	gs.RackOptimization++
+	return &ActionResult{}, nil
+}
+
 func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, services []models.Service, compUpgrades []models.ComponentUpgrade) (*ActionResult, error) {
 	// Must be at 48U rack with SaaS unlocked
 	if gs.Tier != models.TierRack48U {
@@ -745,6 +822,15 @@ func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, serv
 		totalCompute += s.ComputePerTick
 		totalRep += s.ReputationPerTick
 		totalMoney += s.MoneyPerTick
+	}
+
+	// Apply rack optimization bonus to snapshot
+	if gs.RackOptimization > 0 {
+		cfg := GetConfig()
+		bonus := 1.0 + float64(gs.RackOptimization)*cfg.RackOptimization.BonusPerLevel
+		totalCompute = int64(float64(totalCompute) * bonus)
+		totalRep = int64(float64(totalRep) * bonus)
+		totalMoney = int64(float64(totalMoney) * bonus)
 	}
 
 	// Determine datacenter tier based on colo count
@@ -800,6 +886,9 @@ func (e *Engine) prestige(gs *models.GameState, hardware []models.Hardware, serv
 	gs.TotalCustomers = 0
 	gs.ThrottleMultiplier = 1.0
 	gs.ThrottleTicksRemaining = 0
+	gs.OverclockMultiplier = 1.0
+	gs.OverclockTicksRemaining = 0
+	gs.RackOptimization = 0
 	gs.DatacenterTier = dcTier
 
 	return &ActionResult{NewColoRack: coloRack, Prestige: true}, nil
@@ -811,6 +900,133 @@ func pow(base float64, exp int) float64 {
 		result *= base
 	}
 	return result
+}
+
+// aggregateResearchBonuses sums research bonuses by effect type from owned research levels.
+// Bonuses within the same effect type stack additively: sum(level * effectValue).
+func aggregateResearchBonuses(levels []models.ResearchLevel) map[string]float64 {
+	bonuses := make(map[string]float64)
+	for _, rl := range levels {
+		node := catalog.GetResearchNode(rl.ResearchNode)
+		if node != nil {
+			bonuses[node.EffectType] += float64(rl.Level) * node.EffectValue
+		}
+	}
+	return bonuses
+}
+
+// researchCost calculates the CU cost for a research node at the given level.
+// Returns the cost and true if valid, or 0 and false if the cost overflows int64.
+func researchCost(baseCost int64, costScale float64, level int) (int64, bool) {
+	costF := float64(baseCost) * math.Pow(costScale, float64(level))
+	if costF > float64(math.MaxInt64) || math.IsInf(costF, 0) || math.IsNaN(costF) {
+		return 0, false // overflow
+	}
+	return int64(costF), true
+}
+
+type buyResearchPayload struct {
+	Node string `json:"node"`
+}
+
+func (e *Engine) buyResearch(gs *models.GameState, payload json.RawMessage, researchLevels []models.ResearchLevel) (*ActionResult, error) {
+	var p buyResearchPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("invalid payload")
+	}
+
+	node := catalog.GetResearchNode(p.Node)
+	if node == nil {
+		return nil, fmt.Errorf("unknown research node: %s", p.Node)
+	}
+
+	// Check tier requirement
+	if catalog.TierToRank(gs.Tier) < catalog.TierToRank(node.MinTier) {
+		return nil, fmt.Errorf("tier too low for %s (need %s)", node.Name, node.MinTier)
+	}
+
+	// Look up current level
+	currentLevel := 0
+	for _, rl := range researchLevels {
+		if rl.ResearchNode == p.Node {
+			currentLevel = rl.Level
+			break
+		}
+	}
+
+	// Compute cost with overflow check
+	cost, ok := researchCost(node.BaseCost, node.CostScale, currentLevel)
+	if !ok {
+		return nil, fmt.Errorf("research level too high (cost overflow)")
+	}
+
+	if gs.ComputeUnits < cost {
+		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", cost, gs.ComputeUnits)
+	}
+
+	gs.ComputeUnits -= cost
+	newLevel := currentLevel + 1
+
+	rl := &models.ResearchLevel{
+		GameStateID:  gs.ID,
+		ResearchNode: p.Node,
+		Level:        newLevel,
+	}
+
+	return &ActionResult{ResearchLevel: rl}, nil
+}
+
+func (e *Engine) bulkBuyResearch(gs *models.GameState, payload json.RawMessage, researchLevels []models.ResearchLevel) (*ActionResult, error) {
+	var p buyResearchPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("invalid payload")
+	}
+
+	node := catalog.GetResearchNode(p.Node)
+	if node == nil {
+		return nil, fmt.Errorf("unknown research node: %s", p.Node)
+	}
+
+	// Check tier requirement
+	if catalog.TierToRank(gs.Tier) < catalog.TierToRank(node.MinTier) {
+		return nil, fmt.Errorf("tier too low for %s (need %s)", node.Name, node.MinTier)
+	}
+
+	// Look up current level
+	currentLevel := 0
+	for _, rl := range researchLevels {
+		if rl.ResearchNode == p.Node {
+			currentLevel = rl.Level
+			break
+		}
+	}
+
+	// Buy as many levels as affordable
+	purchased := 0
+	for {
+		cost, ok := researchCost(node.BaseCost, node.CostScale, currentLevel+purchased)
+		if !ok {
+			break // overflow threshold reached
+		}
+		if gs.ComputeUnits < cost {
+			break // can't afford next level
+		}
+		gs.ComputeUnits -= cost
+		purchased++
+	}
+
+	if purchased == 0 {
+		return nil, fmt.Errorf("not enough compute units")
+	}
+
+	newLevel := currentLevel + purchased
+	rl := &models.ResearchLevel{
+		GameStateID:  gs.ID,
+		ResearchNode: p.Node,
+		Level:        newLevel,
+	}
+
+	return &ActionResult{ResearchLevel: rl}, nil
 }
 
 func (e *Engine) resolveEvent(gs *models.GameState) (*ActionResult, error) {
@@ -1045,6 +1261,51 @@ func (e *Engine) buyBitcoin(gs *models.GameState, payload json.RawMessage, curre
 	return &ActionResult{}, nil
 }
 
+func (e *Engine) buyMaxBitcoin(gs *models.GameState, currentBitcoinPrice int64) (*ActionResult, error) {
+	if currentBitcoinPrice <= 0 {
+		return nil, fmt.Errorf("bitcoin market unavailable")
+	}
+
+	var cuCostPerBTC int64 = 100000
+	maxByMoney := gs.Money / currentBitcoinPrice
+	maxByCU := gs.ComputeUnits / cuCostPerBTC
+	amount := maxByMoney
+	if maxByCU < amount {
+		amount = maxByCU
+	}
+	if amount < 1 {
+		return nil, fmt.Errorf("cannot afford any bitcoin at current price ($%d)", currentBitcoinPrice)
+	}
+
+	gs.Money -= amount * currentBitcoinPrice
+	gs.ComputeUnits -= amount * cuCostPerBTC
+	gs.BitcoinBalance += amount
+
+	return &ActionResult{}, nil
+}
+
+func (e *Engine) sellAllBitcoin(gs *models.GameState, currentBitcoinPrice int64) (*ActionResult, error) {
+	if currentBitcoinPrice <= 0 {
+		return nil, fmt.Errorf("bitcoin market unavailable")
+	}
+
+	var cuCostPerBTC int64 = 100000
+	maxByCU := gs.ComputeUnits / cuCostPerBTC
+	amount := gs.BitcoinBalance
+	if maxByCU < amount {
+		amount = maxByCU
+	}
+	if amount < 1 {
+		return nil, fmt.Errorf("cannot sell any bitcoin (need %d CU per BTC)", cuCostPerBTC)
+	}
+
+	gs.BitcoinBalance -= amount
+	gs.ComputeUnits -= amount * cuCostPerBTC
+	gs.Money += amount * currentBitcoinPrice
+
+	return &ActionResult{}, nil
+}
+
 func (e *Engine) sellBitcoin(gs *models.GameState, payload json.RawMessage, currentBitcoinPrice int64) (*ActionResult, error) {
 	if currentBitcoinPrice <= 0 {
 		return nil, fmt.Errorf("bitcoin market unavailable")
@@ -1080,6 +1341,32 @@ func (e *Engine) sellBitcoin(gs *models.GameState, payload json.RawMessage, curr
 	gs.BitcoinBalance -= p.Amount
 	gs.ComputeUnits -= cuCost
 	gs.Money += p.Amount * currentBitcoinPrice
+
+	return &ActionResult{}, nil
+}
+
+type overclockPayload struct {
+	Tier int `json:"tier"`
+}
+
+func (e *Engine) activateOverclock(gs *models.GameState, payload json.RawMessage) (*ActionResult, error) {
+	var p overclockPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("invalid payload")
+	}
+
+	tier := getOverclockTier(p.Tier)
+	if tier == nil {
+		return nil, fmt.Errorf("invalid overclock tier: %d", p.Tier)
+	}
+
+	if gs.ComputeUnits < tier.Cost {
+		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", tier.Cost, gs.ComputeUnits)
+	}
+
+	gs.ComputeUnits -= tier.Cost
+	gs.OverclockMultiplier = tier.Multiplier
+	gs.OverclockTicksRemaining = tier.Duration
 
 	return &ActionResult{}, nil
 }

@@ -18,6 +18,9 @@ DELETE FROM colo_racks;
 -- Clear leaderboards (stale after wipe)
 DELETE FROM leaderboard_entries;
 
+-- Delete research levels (separate table, must be cleared before game_state reset)
+DELETE FROM research_levels;
+
 -- Reset all game_states to fresh Coffee Table
 UPDATE game_states SET
     tier = 'coffee_table',
@@ -42,6 +45,9 @@ UPDATE game_states SET
     total_customers = 0,
     throttle_multiplier = 1.0,
     throttle_ticks_remaining = 0,
+    overclock_multiplier = 1.0,
+    overclock_ticks_remaining = 0,
+    rack_optimization = 0,
     datacenter_tier = 0,
     owns_datacenter = false,
     datacenter_level = 0,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/homelab-game/backend/internal/api/handlers"
 	"github.com/homelab-game/backend/internal/api/routes"
@@ -39,6 +40,7 @@ func main() {
 	customerQueries := queries.NewCustomerQueries(pool)
 	expenseQueries := queries.NewExpenseQueries(pool)
 	coloRackQueries := queries.NewColoRackQueries(pool)
+	researchLevelQueries := queries.NewResearchLevelQueries(pool)
 	groupQueries := queries.NewGroupQueries(pool)
 	leaderboardQueries := queries.NewLeaderboardQueries(pool)
 	gameEngine := engine.New()
@@ -48,8 +50,13 @@ func main() {
 	bitcoinStore := &bitcoinStoreAdapter{q: bitcoinQueries}
 	bitcoinService := bitcoin.NewPriceService(bitcoinStore, bitcoin.DefaultPriceConfig())
 
+	// Cache the global donated CU sum to eliminate per-request full table scans.
+	// Blocking initial load ensures the cache is populated before accepting connections.
+	globalCUCache := handlers.NewGlobalDonatedCUCache(pool, 30*time.Second)
+	log.Println("Global donated CU cache initialized")
+
 	authHandler := handlers.NewAuthHandler(userQueries, gameStateQueries, cfg.JWTSecret)
-	gameHandler := handlers.NewGameHandler(gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, gameEngine, wsHub, bitcoinService)
+	gameHandler := handlers.NewGameHandler(pool, gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, researchLevelQueries, gameEngine, wsHub, bitcoinService, globalCUCache)
 	socialHandler := handlers.NewSocialHandler(groupQueries, leaderboardQueries, gameStateQueries)
 
 	// Wire hub lifecycle callbacks to GameHandler so that WebSocket
@@ -58,6 +65,9 @@ func main() {
 	// endpoint that begins accepting connections.
 	wsHub.OnConnect = gameHandler.OnConnect
 	wsHub.OnDisconnect = gameHandler.OnDisconnect
+	wsHub.OnMessage = func(userID string, data []byte) {
+		go gameHandler.HandleWSAction(userID, data)
+	}
 
 	handler := routes.Setup(authHandler, gameHandler, socialHandler, wsHub, cfg.JWTSecret)
 
