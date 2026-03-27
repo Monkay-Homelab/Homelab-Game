@@ -8,9 +8,8 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       DB_USER: homelab_game
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: homelab_game
-    secrets:
-      - db_password
     networks:
       - backend
     deploy:
@@ -28,11 +27,10 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       DB_USER: homelab_game
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: homelab_game
       DB_SSLMODE: disable
-    secrets:
-      - db_password
-      - jwt_secret
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "8080:8080"
     networks:
@@ -49,7 +47,7 @@ services:
         delay: 5s
         max_attempts: 5
     healthcheck:
-      test: ["/healthcheck"]
+      test: ["CMD", "/healthcheck"]
       interval: 10s
       timeout: 3s
       start_period: 10s
@@ -69,7 +67,7 @@ services:
         delay: 10s
         order: start-first
       restart_policy:
-        condition: on-failure
+        condition: any
         delay: 5s
         max_attempts: 5
     healthcheck:
@@ -85,9 +83,7 @@ services:
     environment:
       POSTGRES_DB: homelab_game
       POSTGRES_USER: homelab_game
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
-    secrets:
-      - db_password
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -118,8 +114,3 @@ volumes:
   pgdata:
     driver: local
 
-secrets:
-  db_password:
-    external: true
-  jwt_secret:
-    external: true
