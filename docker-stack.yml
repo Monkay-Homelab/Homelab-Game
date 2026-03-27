@@ -83,6 +83,14 @@ services:
         - "traefik.http.services.backend.loadbalancer.healthcheck.path=/health"
         - "traefik.http.services.backend.loadbalancer.healthcheck.interval=5s"
         - "traefik.http.services.backend.loadbalancer.healthcheck.timeout=3s"
+        # CORS middleware
+        - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
+        - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowheaders=Content-Type,Authorization"
+        - "traefik.http.middlewares.backend-cors.headers.accesscontrolalloworiginlist=https://game.homelab.living"
+        - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowcredentials=true"
+        - "traefik.http.middlewares.backend-cors.headers.accesscontrolmaxage=600"
+        - "traefik.http.middlewares.backend-cors.headers.addvaryheader=true"
+        - "traefik.http.routers.backend.middlewares=backend-cors"
     healthcheck:
       test: ["CMD", "/healthcheck"]
       interval: 10s
