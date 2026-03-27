@@ -80,9 +80,7 @@ services:
         - "traefik.http.services.backend.loadbalancer.sticky.cookie.httponly=true"
         - "traefik.http.services.backend.loadbalancer.sticky.cookie.secure=true"
         - "traefik.http.services.backend.loadbalancer.sticky.cookie.samesite=strict"
-        - "traefik.http.services.backend.loadbalancer.healthcheck.path=/health"
-        - "traefik.http.services.backend.loadbalancer.healthcheck.interval=5s"
-        - "traefik.http.services.backend.loadbalancer.healthcheck.timeout=3s"
+        # Healthcheck handled by Docker Swarm, not Traefik (overlay network IP issues)
         # CORS middleware
         - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
         - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowheaders=Content-Type,Authorization"
