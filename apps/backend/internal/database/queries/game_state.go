@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/homelab-game/backend/internal/models"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -55,6 +56,17 @@ func (q *GameStateQueries) GetByUserID(ctx context.Context, userID string) (*mod
 	var gs models.GameState
 	err := q.pool.QueryRow(ctx,
 		`SELECT `+gsColumns+` FROM game_states WHERE user_id = $1`, userID,
+	).Scan(gsFields(&gs)...)
+	if err != nil {
+		return nil, err
+	}
+	return &gs, nil
+}
+
+func (q *GameStateQueries) GetByUserIDForUpdate(ctx context.Context, tx pgx.Tx, userID string) (*models.GameState, error) {
+	var gs models.GameState
+	err := tx.QueryRow(ctx,
+		`SELECT `+gsColumns+` FROM game_states WHERE user_id = $1 FOR UPDATE`, userID,
 	).Scan(gsFields(&gs)...)
 	if err != nil {
 		return nil, err

@@ -70,6 +70,7 @@ func DefaultPriceConfig() PriceConfig {
 // concurrent callers do not produce duplicate steps.
 type PriceService struct {
 	store  PriceStore
+	leader *PriceLeader
 	mu     sync.Mutex
 	config PriceConfig
 }
@@ -92,6 +93,15 @@ func NewPriceService(store PriceStore, config PriceConfig) *PriceService {
 // Concurrent calls are serialized: the first caller advances the price and writes it
 // back; subsequent callers see the already-advanced price.
 func (s *PriceService) GetCurrentPrice(ctx context.Context, now time.Time) (int64, error) {
+	// Non-leader replicas just read the current price without advancing the model.
+	if s.leader != nil && !s.leader.IsLeader() {
+		state, err := s.store.GetPrice(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("get bitcoin price state: %w", err)
+		}
+		return state.CurrentPrice, nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -194,6 +204,12 @@ func (s *PriceService) step(price int64, rng *rand.Rand) int64 {
 	}
 
 	return nextInt
+}
+
+// SetLeader injects the leader election instance so that non-leader replicas
+// skip price advancement and only read the current price from the store.
+func (s *PriceService) SetLeader(leader *PriceLeader) {
+	s.leader = leader
 }
 
 // Config returns the service's price configuration (useful for exposing

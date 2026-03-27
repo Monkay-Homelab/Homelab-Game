@@ -154,6 +154,7 @@ type GameHandler struct {
 	research      *queries.ResearchLevelQueries
 	engine        *engine.Engine
 	hub           *ws.Hub
+	broadcaster   ws.MessageBroadcaster
 	userLocks     *userMutexMap
 	tickState     *tickStateMap
 	bitcoinSvc    *bitcoin.PriceService
@@ -175,6 +176,7 @@ func NewGameHandler(
 	research *queries.ResearchLevelQueries,
 	eng *engine.Engine,
 	hub *ws.Hub,
+	broadcaster ws.MessageBroadcaster,
 	bitcoinSvc *bitcoin.PriceService,
 	globalCUCache *GlobalDonatedCUCache,
 ) *GameHandler {
@@ -184,7 +186,7 @@ func NewGameHandler(
 			tick = time.Duration(v) * time.Second
 		}
 	}
-	return &GameHandler{pool: pool, gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, research: research, engine: eng, hub: hub, userLocks: newUserMutexMap(), tickState: newTickStateMap(), bitcoinSvc: bitcoinSvc, globalCUCache: globalCUCache, tickInterval: tick}
+	return &GameHandler{pool: pool, gameState: gameState, hardware: hardware, services: services, upgrades: upgrades, components: components, customers: customers, expenses: expenses, coloRacks: coloRacks, groups: groups, research: research, engine: eng, hub: hub, broadcaster: broadcaster, userLocks: newUserMutexMap(), tickState: newTickStateMap(), bitcoinSvc: bitcoinSvc, globalCUCache: globalCUCache, tickInterval: tick}
 }
 
 type fullStateResponse struct {
@@ -240,7 +242,7 @@ func (h *GameHandler) buildResponse(gs *models.GameState, hw []models.Hardware, 
 func (h *GameHandler) pushEvents(userID string, evts []*events.GameEvent) {
 	for _, evt := range evts {
 		data, _ := json.Marshal(evt)
-		h.hub.SendToUser(userID, ws.Message{
+		h.broadcaster.SendToUser(userID, ws.Message{
 			Type:    "event",
 			Payload: data,
 		})
@@ -478,7 +480,7 @@ func (h *GameHandler) runFullTick(ctx context.Context, userID string, ts *userTi
 	if err != nil {
 		return err
 	}
-	h.hub.SendToUser(userID, ws.Message{
+	h.broadcaster.SendToUser(userID, ws.Message{
 		Type:    "state",
 		Payload: payload,
 	})
@@ -584,7 +586,7 @@ func (h *GameHandler) runLightTick(ctx context.Context, userID string, ts *userT
 	if err != nil {
 		return err
 	}
-	h.hub.SendToUser(userID, ws.Message{
+	h.broadcaster.SendToUser(userID, ws.Message{
 		Type:    "state",
 		Payload: payload,
 	})
@@ -1013,7 +1015,7 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	// authoritative response; this is a bonus so the client's WS-driven
 	// state path doesn't wait for the next tick.
 	if stateJSON, err := json.Marshal(resp); err == nil {
-		h.hub.SendToUser(userID, ws.Message{
+		h.broadcaster.SendToUser(userID, ws.Message{
 			Type:    "state",
 			Payload: stateJSON,
 		})
@@ -1072,7 +1074,7 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 			Error:   "missing request id",
 		}
 		if resData, err := json.Marshal(result); err == nil {
-			h.hub.SendToUserBytes(userID, resData)
+			h.broadcaster.SendToUserBytes(userID, resData)
 		}
 		return
 	}
@@ -1086,7 +1088,7 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 			Error:   "rate limited",
 		}
 		if resData, err := json.Marshal(result); err == nil {
-			h.hub.SendToUserBytes(userID, resData)
+			h.broadcaster.SendToUserBytes(userID, resData)
 		}
 		return
 	}
@@ -1113,7 +1115,7 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 				Error:   "internal server error",
 			}
 			if resData, err := json.Marshal(result); err == nil {
-				h.hub.SendToUserBytes(userID, resData)
+				h.broadcaster.SendToUserBytes(userID, resData)
 			}
 		}
 	}()
@@ -1137,7 +1139,7 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 			Error:   "internal server error",
 		}
 		if resData, err := json.Marshal(result); err == nil {
-			h.hub.SendToUserBytes(userID, resData)
+			h.broadcaster.SendToUserBytes(userID, resData)
 		}
 		return
 	}
@@ -1202,7 +1204,7 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 			Error:   actionErr.Error(),
 		}
 		if resData, err := json.Marshal(res); err == nil {
-			h.hub.SendToUserBytes(userID, resData)
+			h.broadcaster.SendToUserBytes(userID, resData)
 		}
 		return
 	}
@@ -1341,6 +1343,6 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 		State:   &resp,
 	}
 	if resData, err := json.Marshal(res); err == nil {
-		h.hub.SendToUserBytes(userID, resData)
+		h.broadcaster.SendToUserBytes(userID, resData)
 	}
 }

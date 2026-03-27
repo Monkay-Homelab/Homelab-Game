@@ -293,6 +293,14 @@ func (h *Hub) SendToUserBytes(userID string, data []byte) {
 	}
 }
 
+// HasUser returns true if the given user has an active WebSocket connection on this replica.
+func (h *Hub) HasUser(userID string) bool {
+	h.mu.RLock()
+	_, ok := h.clients[userID]
+	h.mu.RUnlock()
+	return ok
+}
+
 // ConnectedUsers returns the number of connected clients.
 func (h *Hub) ConnectedUsers() int {
 	h.mu.RLock()

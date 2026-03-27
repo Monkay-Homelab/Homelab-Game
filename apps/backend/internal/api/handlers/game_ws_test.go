@@ -34,8 +34,9 @@ func newWSTestEnv(t *testing.T) *wsTestEnv {
 	userID := "ws-test-user-001"
 
 	handler := &GameHandler{
-		hub:       hub,
-		userLocks: newUserMutexMap(),
+		hub:         hub,
+		broadcaster: ws.NewLocalBroadcaster(hub),
+		userLocks:   newUserMutexMap(),
 		// All query pointers are intentionally nil. Tests must not reach
 		// processAction database calls.
 	}

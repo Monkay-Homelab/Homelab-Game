@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,7 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/homelab-game/backend/internal/api/handlers"
+	"github.com/homelab-game/backend/internal/api/middleware"
 	"github.com/homelab-game/backend/internal/api/routes"
 	"github.com/homelab-game/backend/internal/api/ws"
 	"github.com/homelab-game/backend/internal/config"
@@ -33,6 +37,26 @@ func main() {
 	defer pool.Close()
 	log.Println("Connected to database")
 
+	// Connect to Redis (optional — graceful degradation if unavailable)
+	var rdb *redis.Client
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Printf("WARNING: Redis unavailable at %s: %v — running without Redis", cfg.RedisAddr, err)
+		rdb = nil
+	} else {
+		log.Printf("Connected to Redis at %s", cfg.RedisAddr)
+		defer rdb.Close()
+	}
+	// Wire Redis-backed services when available
+	if rdb != nil {
+		middleware.SetRateLimitStore(middleware.NewRedisRateLimitStore(rdb))
+		log.Println("Rate limiting backed by Redis")
+	}
+
 	userQueries := queries.NewUserQueries(pool)
 	gameStateQueries := queries.NewGameStateQueries(pool)
 	hardwareQueries := queries.NewHardwareQueries(pool)
@@ -52,13 +76,36 @@ func main() {
 	bitcoinStore := &bitcoinStoreAdapter{q: bitcoinQueries}
 	bitcoinService := bitcoin.NewPriceService(bitcoinStore, bitcoin.DefaultPriceConfig())
 
+	// Bitcoin price leader election (only one replica advances the price)
+	if rdb != nil {
+		hostname, _ := os.Hostname()
+		replicaID := fmt.Sprintf("backend-%s-%d", hostname, time.Now().UnixNano())
+		priceLeader := bitcoin.NewPriceLeader(rdb, replicaID)
+		priceLeader.Start(context.Background())
+		defer priceLeader.Stop()
+		bitcoinService.SetLeader(priceLeader)
+		log.Printf("Bitcoin price leader election started (replica: %s)", replicaID)
+	}
+
+	// Create message broadcaster (Redis-backed if available, local otherwise)
+	var broadcaster ws.MessageBroadcaster
+	if rdb != nil {
+		rb := ws.NewRedisBroadcaster(wsHub, rdb)
+		rb.Start(context.Background())
+		defer rb.Stop()
+		broadcaster = rb
+		log.Println("WebSocket broadcasting backed by Redis pub/sub")
+	} else {
+		broadcaster = ws.NewLocalBroadcaster(wsHub)
+	}
+
 	// Cache the global donated CU sum to eliminate per-request full table scans.
 	// Blocking initial load ensures the cache is populated before accepting connections.
-	globalCUCache := handlers.NewGlobalDonatedCUCache(pool, 30*time.Second)
+	globalCUCache := handlers.NewGlobalDonatedCUCache(pool, rdb, 30*time.Second)
 	log.Println("Global donated CU cache initialized")
 
 	authHandler := handlers.NewAuthHandler(userQueries, gameStateQueries, cfg.JWTSecret)
-	gameHandler := handlers.NewGameHandler(pool, gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, researchLevelQueries, gameEngine, wsHub, bitcoinService, globalCUCache)
+	gameHandler := handlers.NewGameHandler(pool, gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, researchLevelQueries, gameEngine, wsHub, broadcaster, bitcoinService, globalCUCache)
 	socialHandler := handlers.NewSocialHandler(groupQueries, leaderboardQueries, gameStateQueries)
 
 	// Wire hub lifecycle callbacks to GameHandler so that WebSocket

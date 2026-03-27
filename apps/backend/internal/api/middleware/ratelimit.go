@@ -1,13 +1,31 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
-type rateLimiter struct {
+// RateLimitStore abstracts the storage backend for rate limiting.
+// Implementations must be safe for concurrent use.
+type RateLimitStore interface {
+	CheckRate(ctx context.Context, key string, maxPerMinute int) bool
+}
+
+// store is the active rate limit backend. Defaults to in-memory.
+// Call SetRateLimitStore during initialization (before serving traffic) to swap.
+var store RateLimitStore = NewInMemoryRateLimitStore()
+
+// SetRateLimitStore replaces the active rate limit backend.
+// Must be called during initialization, before serving traffic.
+func SetRateLimitStore(s RateLimitStore) {
+	store = s
+}
+
+// InMemoryRateLimitStore implements RateLimitStore with a local map.
+type InMemoryRateLimitStore struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
 }
@@ -17,23 +35,37 @@ type visitor struct {
 	lastSeen time.Time
 }
 
-var limiter = &rateLimiter{
-	visitors: make(map[string]*visitor),
+func NewInMemoryRateLimitStore() *InMemoryRateLimitStore {
+	s := &InMemoryRateLimitStore{visitors: make(map[string]*visitor)}
+	go s.cleanup()
+	return s
 }
 
-func init() {
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			limiter.mu.Lock()
-			for key, v := range limiter.visitors {
-				if time.Since(v.lastSeen) > time.Minute {
-					delete(limiter.visitors, key)
-				}
+func (s *InMemoryRateLimitStore) cleanup() {
+	for {
+		time.Sleep(time.Minute)
+		s.mu.Lock()
+		for key, v := range s.visitors {
+			if time.Since(v.lastSeen) > time.Minute {
+				delete(s.visitors, key)
 			}
-			limiter.mu.Unlock()
 		}
-	}()
+		s.mu.Unlock()
+	}
+}
+
+func (s *InMemoryRateLimitStore) CheckRate(_ context.Context, key string, maxPerMinute int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	v, exists := s.visitors[key]
+	if !exists || time.Since(v.lastSeen) > time.Minute {
+		s.visitors[key] = &visitor{count: 1, lastSeen: time.Now()}
+		return true
+	}
+	v.count++
+	v.lastSeen = time.Now()
+	return v.count <= maxPerMinute
 }
 
 // getClientIP extracts the real client IP. Prefers X-Real-IP (set by trusted
@@ -44,7 +76,6 @@ func getClientIP(r *http.Request) string {
 		return strings.TrimSpace(xri)
 	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Rightmost IP is the one appended by the trusted reverse proxy
 		parts := strings.Split(xff, ",")
 		return strings.TrimSpace(parts[len(parts)-1])
 	}
@@ -52,17 +83,7 @@ func getClientIP(r *http.Request) string {
 }
 
 func checkRate(key string, maxPerMinute int) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	v, exists := limiter.visitors[key]
-	if !exists || time.Since(v.lastSeen) > time.Minute {
-		limiter.visitors[key] = &visitor{count: 1, lastSeen: time.Now()}
-		return true
-	}
-	v.count++
-	v.lastSeen = time.Now()
-	return v.count <= maxPerMinute
+	return store.CheckRate(context.Background(), key, maxPerMinute)
 }
 
 // RateLimit limits requests per client IP.
