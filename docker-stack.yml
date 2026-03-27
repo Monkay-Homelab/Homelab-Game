@@ -71,7 +71,7 @@ services:
         delay: 5s
         max_attempts: 5
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       start_period: 5s
