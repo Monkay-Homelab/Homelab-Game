@@ -221,14 +221,16 @@ func TestProcessIdleProgress_OverclockExpiry(t *testing.T) {
 func TestProcessIdleProgress_OverclockMultiplierApplied(t *testing.T) {
 	e := New()
 
+	now := time.Now()
+
 	// Test without overclock
 	gs1 := newTestState()
 	gs1.ComputeUnits = 0
-	gs1.LastTickAt = time.Now().Add(-5 * time.Second)
+	gs1.LastTickAt = now.Add(-5 * time.Second)
 	hw := []models.Hardware{
 		{ID: "hw1", ComputePerTick: 100, PowerDraw: 10},
 	}
-	e.ProcessIdleProgress(gs1, hw, nil, nil, nil, nil, nil, nil, time.Now())
+	e.ProcessIdleProgress(gs1, hw, nil, nil, nil, nil, nil, nil, now)
 	baseIncome := gs1.ComputeUnits
 
 	// Test with 2x overclock
@@ -236,8 +238,8 @@ func TestProcessIdleProgress_OverclockMultiplierApplied(t *testing.T) {
 	gs2.ComputeUnits = 0
 	gs2.OverclockMultiplier = 2.0
 	gs2.OverclockTicksRemaining = 60
-	gs2.LastTickAt = time.Now().Add(-5 * time.Second)
-	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, nil, time.Now())
+	gs2.LastTickAt = now.Add(-5 * time.Second)
+	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, nil, now)
 	overclockIncome := gs2.ComputeUnits
 
 	if baseIncome == 0 {
@@ -314,6 +316,8 @@ func TestProcessIdleProgress_OverclockOfflineExpiry(t *testing.T) {
 func TestProcessIdleProgress_OverclockPartialOffline(t *testing.T) {
 	e := New()
 
+	now := time.Now()
+
 	// Scenario: overclock has 30 ticks left (150s), player is offline for 300s (60 ticks).
 	// Weighted average: overclock was active for first 150s out of 300s total.
 	// Expected weighted multiplier = 2.0 * (150/300) + 1.0 * (150/300) = 1.5
@@ -321,18 +325,18 @@ func TestProcessIdleProgress_OverclockPartialOffline(t *testing.T) {
 	gs.ComputeUnits = 0
 	gs.OverclockMultiplier = 2.0
 	gs.OverclockTicksRemaining = 30
-	gs.LastTickAt = time.Now().Add(-300 * time.Second)
+	gs.LastTickAt = now.Add(-300 * time.Second)
 	hw := []models.Hardware{
 		{ID: "hw1", ComputePerTick: 100, PowerDraw: 10},
 	}
-	e.ProcessIdleProgress(gs, hw, nil, nil, nil, nil, nil, nil, time.Now())
+	e.ProcessIdleProgress(gs, hw, nil, nil, nil, nil, nil, nil, now)
 	partialIncome := gs.ComputeUnits
 
 	// Compare to no-overclock baseline for same offline period
 	gs2 := newTestState()
 	gs2.ComputeUnits = 0
-	gs2.LastTickAt = time.Now().Add(-300 * time.Second)
-	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, nil, time.Now())
+	gs2.LastTickAt = now.Add(-300 * time.Second)
+	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, nil, now)
 	baseIncome := gs2.ComputeUnits
 
 	if baseIncome == 0 {
@@ -502,24 +506,26 @@ func TestBulkBuyResearch_AlreadyHasLevels(t *testing.T) {
 func TestProcessIdleProgress_ResearchIdleIncome(t *testing.T) {
 	e := New()
 
+	now := time.Now()
+
 	// Test without research
 	gs1 := newTestState()
 	gs1.ComputeUnits = 0
-	gs1.LastTickAt = time.Now().Add(-5 * time.Second)
+	gs1.LastTickAt = now.Add(-5 * time.Second)
 	hw := []models.Hardware{
 		{ID: "hw1", ComputePerTick: 100, PowerDraw: 10},
 	}
-	e.ProcessIdleProgress(gs1, hw, nil, nil, nil, nil, nil, nil, time.Now())
+	e.ProcessIdleProgress(gs1, hw, nil, nil, nil, nil, nil, nil, now)
 	baseIncome := gs1.ComputeUnits
 
 	// Test with idle_income research (read_the_docs at level 5 = +10% idle income)
 	gs2 := newTestState()
 	gs2.ComputeUnits = 0
-	gs2.LastTickAt = time.Now().Add(-5 * time.Second)
+	gs2.LastTickAt = now.Add(-5 * time.Second)
 	research := []models.ResearchLevel{
 		{ResearchNode: "read_the_docs", Level: 5}, // 5 * 0.02 = +10%
 	}
-	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, research, time.Now())
+	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, research, now)
 	researchIncome := gs2.ComputeUnits
 
 	if baseIncome == 0 {
@@ -538,21 +544,23 @@ func TestProcessIdleProgress_ResearchReputationGain(t *testing.T) {
 		{ID: "svc1", ReputationPerTick: 100, ComputePerTick: 0, MoneyPerTick: 0},
 	}
 
+	now := time.Now()
+
 	// Test without research
 	gs1 := newTestState()
 	gs1.Reputation = 0
-	gs1.LastTickAt = time.Now().Add(-5 * time.Second)
-	e.ProcessIdleProgress(gs1, nil, svcs, nil, nil, nil, nil, nil, time.Now())
+	gs1.LastTickAt = now.Add(-5 * time.Second)
+	e.ProcessIdleProgress(gs1, nil, svcs, nil, nil, nil, nil, nil, now)
 	baseRep := gs1.Reputation
 
 	// Test with reputation_gain research (blog_writing at level 10 = +30%)
 	gs2 := newTestState()
 	gs2.Reputation = 0
-	gs2.LastTickAt = time.Now().Add(-5 * time.Second)
+	gs2.LastTickAt = now.Add(-5 * time.Second)
 	research := []models.ResearchLevel{
 		{ResearchNode: "blog_writing", Level: 10}, // 10 * 0.03 = +30%
 	}
-	e.ProcessIdleProgress(gs2, nil, svcs, nil, nil, nil, nil, research, time.Now())
+	e.ProcessIdleProgress(gs2, nil, svcs, nil, nil, nil, nil, research, now)
 	researchRep := gs2.Reputation
 
 	if baseRep == 0 {
@@ -571,22 +579,24 @@ func TestProcessIdleProgress_ResearchMoneyIncome(t *testing.T) {
 		{ID: "svc1", MoneyPerTick: 100, ComputePerTick: 0, ReputationPerTick: 0},
 	}
 
+	now := time.Now()
+
 	// Test without research
 	gs1 := newTestState()
 	gs1.Money = 0
-	gs1.LastTickAt = time.Now().Add(-5 * time.Second)
-	e.ProcessIdleProgress(gs1, nil, svcs, nil, nil, nil, nil, nil, time.Now())
+	gs1.LastTickAt = now.Add(-5 * time.Second)
+	e.ProcessIdleProgress(gs1, nil, svcs, nil, nil, nil, nil, nil, now)
 	baseMoney := gs1.Money
 
 	// Test with money_income research (chaos_engineering at level 5 = +20%)
 	gs2 := newTestState()
 	gs2.Tier = models.TierRack48U
 	gs2.Money = 0
-	gs2.LastTickAt = time.Now().Add(-5 * time.Second)
+	gs2.LastTickAt = now.Add(-5 * time.Second)
 	research := []models.ResearchLevel{
 		{ResearchNode: "chaos_engineering", Level: 5}, // 5 * 0.04 = +20%
 	}
-	e.ProcessIdleProgress(gs2, nil, svcs, nil, nil, nil, nil, research, time.Now())
+	e.ProcessIdleProgress(gs2, nil, svcs, nil, nil, nil, nil, research, now)
 	researchMoney := gs2.Money
 
 	if baseMoney == 0 {
@@ -878,11 +888,13 @@ func TestOverclockAndResearch_StackMultiplicatively(t *testing.T) {
 		{ID: "hw1", ComputePerTick: 100, PowerDraw: 10},
 	}
 
+	now := time.Now()
+
 	// Baseline: no overclock, no research
 	gs1 := newTestState()
 	gs1.ComputeUnits = 0
-	gs1.LastTickAt = time.Now().Add(-5 * time.Second)
-	e.ProcessIdleProgress(gs1, hw, nil, nil, nil, nil, nil, nil, time.Now())
+	gs1.LastTickAt = now.Add(-5 * time.Second)
+	e.ProcessIdleProgress(gs1, hw, nil, nil, nil, nil, nil, nil, now)
 	baseIncome := gs1.ComputeUnits
 
 	// With 2x overclock AND +10% research
@@ -890,11 +902,11 @@ func TestOverclockAndResearch_StackMultiplicatively(t *testing.T) {
 	gs2.ComputeUnits = 0
 	gs2.OverclockMultiplier = 2.0
 	gs2.OverclockTicksRemaining = 60
-	gs2.LastTickAt = time.Now().Add(-5 * time.Second)
+	gs2.LastTickAt = now.Add(-5 * time.Second)
 	research := []models.ResearchLevel{
 		{ResearchNode: "read_the_docs", Level: 5}, // +10%
 	}
-	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, research, time.Now())
+	e.ProcessIdleProgress(gs2, hw, nil, nil, nil, nil, nil, research, now)
 	combinedIncome := gs2.ComputeUnits
 
 	if baseIncome == 0 {
