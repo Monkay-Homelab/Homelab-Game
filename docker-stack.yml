@@ -4,6 +4,8 @@ services:
   # ---- Traefik Ingress ----
   traefik:
     image: traefik:v3.6
+    environment:
+      - DOCKER_API_VERSION=1.45
     command:
       - "--providers.swarm=true"
       - "--providers.swarm.exposedByDefault=false"
@@ -72,6 +74,7 @@ services:
         max_attempts: 5
       labels:
         - "traefik.enable=true"
+        - "traefik.docker.network=homelab-the-game_frontend"
         - "traefik.http.routers.backend.rule=Host(`api.homelab.living`)"
         - "traefik.http.routers.backend.entrypoints=web"
         - "traefik.http.services.backend.loadbalancer.server.port=8085"
@@ -113,6 +116,7 @@ services:
         max_attempts: 5
       labels:
         - "traefik.enable=true"
+        - "traefik.docker.network=homelab-the-game_frontend"
         - "traefik.http.routers.frontend.rule=Host(`game.homelab.living`)"
         - "traefik.http.routers.frontend.entrypoints=web"
         - "traefik.http.services.frontend.loadbalancer.server.port=80"
@@ -186,4 +190,3 @@ networks:
 volumes:
   pgdata:
     driver: local
-
