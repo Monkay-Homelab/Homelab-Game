@@ -857,6 +857,23 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if result.ResearchLevel != nil {
+		if err := h.research.Upsert(r.Context(), result.ResearchLevel); err != nil {
+			http.Error(w, `{"error":"failed to save research level"}`, http.StatusInternalServerError)
+			return
+		}
+		found := false
+		for i := range researchLevels {
+			if researchLevels[i].ResearchNode == result.ResearchLevel.ResearchNode {
+				researchLevels[i] = *result.ResearchLevel
+				found = true
+				break
+			}
+		}
+		if !found {
+			researchLevels = append(researchLevels, *result.ResearchLevel)
+		}
+	}
 	// Bulk persistence
 	for i := range result.NewServices {
 		if err := h.services.Create(r.Context(), &result.NewServices[i]); err != nil {
@@ -1201,6 +1218,20 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 	}
 	if result.ComponentUpgrade != nil {
 		h.components.Upsert(tickCtx, result.ComponentUpgrade)
+	}
+	if result.ResearchLevel != nil {
+		h.research.Upsert(tickCtx, result.ResearchLevel)
+		found := false
+		for i := range researchLevels {
+			if researchLevels[i].ResearchNode == result.ResearchLevel.ResearchNode {
+				researchLevels[i] = *result.ResearchLevel
+				found = true
+				break
+			}
+		}
+		if !found {
+			researchLevels = append(researchLevels, *result.ResearchLevel)
+		}
 	}
 	// Bulk persistence
 	for i := range result.NewServices {
