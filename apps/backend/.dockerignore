@@ -1,0 +1,18 @@
+# Secrets — never bake into images
+.env
+*.env
+
+# Database dumps
+*.dump
+*.sql
+
+# Build artifacts
+server
+cmd/server/server
+
+# Tests and dev files
+*_test.go
+**/*_test.go
+
+# Docs
+*.md

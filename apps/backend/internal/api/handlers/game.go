@@ -25,22 +25,30 @@ import (
 // userMutexMap provides per-user locking to prevent race conditions on concurrent actions.
 type userMutexMap struct {
 	mu    sync.Mutex
-	locks map[string]*sync.Mutex
+	locks map[string]*userLock
+}
+
+type userLock struct {
+	sync.Mutex
+	lastUsed time.Time
 }
 
 func newUserMutexMap() *userMutexMap {
-	return &userMutexMap{locks: make(map[string]*sync.Mutex)}
+	m := &userMutexMap{locks: make(map[string]*userLock)}
+	go m.cleanup()
+	return m
 }
 
 func (m *userMutexMap) Lock(userID string) {
 	m.mu.Lock()
 	l, ok := m.locks[userID]
 	if !ok {
-		l = &sync.Mutex{}
+		l = &userLock{}
 		m.locks[userID] = l
 	}
+	l.lastUsed = time.Now()
 	m.mu.Unlock()
-	l.Lock()
+	l.Mutex.Lock()
 }
 
 func (m *userMutexMap) Unlock(userID string) {
@@ -48,7 +56,21 @@ func (m *userMutexMap) Unlock(userID string) {
 	l, ok := m.locks[userID]
 	m.mu.Unlock()
 	if ok {
-		l.Unlock()
+		l.Mutex.Unlock()
+	}
+}
+
+// cleanup removes stale entries every 5 minutes for users inactive > 10 minutes.
+func (m *userMutexMap) cleanup() {
+	for {
+		time.Sleep(5 * time.Minute)
+		m.mu.Lock()
+		for id, l := range m.locks {
+			if time.Since(l.lastUsed) > 10*time.Minute {
+				delete(m.locks, id)
+			}
+		}
+		m.mu.Unlock()
 	}
 }
 

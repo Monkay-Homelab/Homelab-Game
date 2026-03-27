@@ -5,8 +5,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/homelab-game/backend/internal/api/handlers"
@@ -72,10 +74,30 @@ func main() {
 	handler := routes.Setup(authHandler, gameHandler, socialHandler, wsHub, cfg.JWTSecret)
 
 	addr := ":" + cfg.Port
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+
+	// Graceful shutdown: listen for SIGTERM/SIGINT, drain connections.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		<-quit
+		log.Println("Shutting down server (10s grace period)...")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
+	}()
+
 	log.Printf("Homelab Game API starting on %s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+	log.Println("Server stopped")
 }
 
 // bitcoinStoreAdapter adapts queries.BitcoinQueries to the bitcoin.PriceStore interface.

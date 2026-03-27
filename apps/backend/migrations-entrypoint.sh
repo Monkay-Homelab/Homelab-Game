@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Read DB_PASSWORD from Docker secret file if env var not set
+if [ -z "$DB_PASSWORD" ] && [ -f /run/secrets/db_password ]; then
+  DB_PASSWORD=$(cat /run/secrets/db_password)
+fi
+
 export PGHOST="$DB_HOST"
 export PGPORT="$DB_PORT"
 export PGDATABASE="$DB_NAME"

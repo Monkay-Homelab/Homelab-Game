@@ -36,17 +36,17 @@ func init() {
 	}()
 }
 
-// getClientIP extracts the real client IP, checking X-Forwarded-For first.
+// getClientIP extracts the real client IP. Prefers X-Real-IP (set by trusted
+// reverse proxy) over X-Forwarded-For. For XFF, uses the rightmost IP which
+// is the one appended by the trusted proxy and cannot be spoofed by the client.
 func getClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// First IP in the chain is the original client
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		return strings.TrimSpace(xri)
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Rightmost IP is the one appended by the trusted reverse proxy
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[len(parts)-1])
 	}
 	return r.RemoteAddr
 }

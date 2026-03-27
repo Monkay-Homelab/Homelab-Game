@@ -31,3 +31,6 @@ COPY --from=builder /app/apps/desktop/dist /usr/share/nginx/html
 COPY apps/desktop/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --spider -q http://localhost/ || exit 1

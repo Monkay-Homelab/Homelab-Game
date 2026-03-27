@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,21 +30,24 @@ const (
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
-		allowed := []string{
-			"https://game.homelab.living",
-			"http://game.homelab.living",
-			"https://homelab.living",
-			"http://homelab.living",
-			"http://localhost:3000",
-			"http://127.0.0.1:3000",
-			"http://192.168.3.107:3000",
+		allowed := map[string]bool{
+			"https://game.homelab.living": true,
+			"http://game.homelab.living":  true,
+			"https://homelab.living":      true,
+			"http://homelab.living":       true,
 		}
-		for _, a := range allowed {
-			if origin == a {
-				return true
+		// Dev mode: allow localhost (mirror CORS middleware behavior)
+		if os.Getenv("ENV") != "production" {
+			allowed["http://localhost:3000"] = true
+			allowed["http://127.0.0.1:3000"] = true
+		}
+		// Allow extra origins from env (comma-separated)
+		if extra := os.Getenv("CORS_ORIGINS"); extra != "" {
+			for _, o := range strings.Split(extra, ",") {
+				allowed[strings.TrimSpace(o)] = true
 			}
 		}
-		return false
+		return allowed[origin]
 	},
 }
 
