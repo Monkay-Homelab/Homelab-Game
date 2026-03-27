@@ -8,11 +8,10 @@ services:
       - "--providers.swarm=true"
       - "--providers.swarm.exposedByDefault=false"
       - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
+      # TLS terminated at external nginx — no websecure entrypoint needed
       - "--ping=true"
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -74,7 +73,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.backend.rule=Host(`api.homelab.living`)"
-        - "traefik.http.routers.backend.entrypoints=websecure"
+        - "traefik.http.routers.backend.entrypoints=web"
         - "traefik.http.services.backend.loadbalancer.server.port=8080"
         - "traefik.http.services.backend.loadbalancer.sticky.cookie=true"
         - "traefik.http.services.backend.loadbalancer.sticky.cookie.name=_backend_affinity"
