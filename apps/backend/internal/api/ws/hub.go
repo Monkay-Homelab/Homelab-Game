@@ -264,12 +264,7 @@ func (h *Hub) SendToUser(userID string, msg Message) {
 		return
 	}
 
-	select {
-	case client.send <- data:
-		// Message queued.
-	default:
-		log.Printf("WS push dropped for user %s: send buffer full", userID)
-	}
+	h.trySend(client, userID, data)
 }
 
 // SendToUserBytes sends pre-serialized bytes to a specific user if connected.
@@ -284,6 +279,19 @@ func (h *Hub) SendToUserBytes(userID string, data []byte) {
 	if !ok {
 		return
 	}
+
+	h.trySend(client, userID, data)
+}
+
+// trySend attempts a non-blocking send on the client's send channel.
+// It recovers from a panic if the channel was closed between the map
+// lookup and the send (race between disconnect cleanup and tick push).
+func (h *Hub) trySend(client *Client, userID string, data []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("WS send recovered for user %s (client disconnected): %v", userID, r)
+		}
+	}()
 
 	select {
 	case client.send <- data:
