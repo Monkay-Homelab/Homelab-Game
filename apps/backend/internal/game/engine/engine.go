@@ -744,6 +744,12 @@ func (e *Engine) upgradeComponent(gs *models.GameState, payload json.RawMessage,
 		return nil, fmt.Errorf("unknown component: %s", p.Component)
 	}
 
+	// Look up hardware template to get purchase cost for scaling
+	tmpl := catalog.GetHardwareByName(found.Name)
+	if tmpl == nil {
+		return nil, fmt.Errorf("unknown hardware template: %s", found.Name)
+	}
+
 	// Look up current level from existing component upgrades
 	currentLevel := 0
 	for _, cu := range compUpgrades {
@@ -752,7 +758,7 @@ func (e *Engine) upgradeComponent(gs *models.GameState, payload json.RawMessage,
 			break
 		}
 	}
-	cost := int64(float64(info.BaseCost) * pow(info.CostScale, currentLevel))
+	cost := int64(float64(tmpl.Cost) * info.CostFraction * pow(info.CostScale, currentLevel))
 
 	if gs.ComputeUnits < cost {
 		return nil, fmt.Errorf("not enough compute units (need %d)", cost)
@@ -783,10 +789,10 @@ func (e *Engine) optimizeRack(gs *models.GameState) (*ActionResult, error) {
 	if !gs.SaasUnlocked {
 		return nil, fmt.Errorf("must have SaaS unlocked to optimize")
 	}
-	if gs.RackOptimization >= 46 {
+	if gs.RackOptimization < 0 || gs.RackOptimization >= 46 {
 		return nil, fmt.Errorf("optimization level at maximum")
 	}
-	cost := int64(100000) << uint(gs.RackOptimization)
+	cost := int64(100000) << uint(gs.RackOptimization) //nolint:gosec // bounded [0,45] by check above
 	if gs.ComputeUnits < cost {
 		return nil, fmt.Errorf("not enough compute units (need %d, have %d)", cost, gs.ComputeUnits)
 	}
@@ -1437,6 +1443,10 @@ func (e *Engine) bulkUpgradeComponents(gs *models.GameState, hardware []models.H
 			if !upgradeableTypes[h.Type] {
 				continue
 			}
+			tmpl := catalog.GetHardwareByName(h.Name)
+			if tmpl == nil {
+				continue
+			}
 			for _, comp := range components {
 				info := catalog.GetComponentUpgradeInfo(comp)
 				if info == nil {
@@ -1452,7 +1462,7 @@ func (e *Engine) bulkUpgradeComponents(gs *models.GameState, hardware []models.H
 				if currentLevel >= info.MaxLevel {
 					continue
 				}
-				cost := int64(float64(info.BaseCost) * pow(info.CostScale, currentLevel))
+				cost := int64(float64(tmpl.Cost) * info.CostFraction * pow(info.CostScale, currentLevel))
 				if gs.ComputeUnits < cost {
 					continue
 				}
@@ -1535,7 +1545,7 @@ type bulkBuyUpgradesPayload struct {
 
 func (e *Engine) bulkBuyUpgrades(gs *models.GameState, payload json.RawMessage, owned []models.Upgrade) (*ActionResult, error) {
 	var p bulkBuyUpgradesPayload
-	json.Unmarshal(payload, &p)
+	_ = json.Unmarshal(payload, &p)
 
 	ownedNames := make(map[string]bool)
 	for _, u := range owned {

@@ -2,7 +2,7 @@ package ws
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -31,10 +31,12 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		allowed := map[string]bool{
-			"https://game.homelab.living": true,
-			"http://game.homelab.living":  true,
-			"https://homelab.living":      true,
-			"http://homelab.living":       true,
+			"https://game.homelab.living":     true,
+			"http://game.homelab.living":      true,
+			"https://homelab.living":          true,
+			"http://homelab.living":           true,
+			"https://dev-game.homelab.living": true,
+			"http://dev-game.homelab.living":  true,
 		}
 		// Dev mode: allow localhost (mirror CORS middleware behavior)
 		if os.Getenv("ENV") != "production" {
@@ -111,7 +113,7 @@ func (h *Hub) HandleConnect(jwtSecret string) http.HandlerFunc {
 
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Printf("WebSocket upgrade error: %v", err)
+			slog.Error("websocket upgrade error", "error", err)
 			return
 		}
 
@@ -147,7 +149,7 @@ func (h *Hub) HandleConnect(jwtSecret string) http.HandlerFunc {
 		h.clients[claims.UserID] = client
 		h.mu.Unlock()
 
-		log.Println("WebSocket client connected")
+		slog.Info("websocket client connected", "user_id", claims.UserID)
 
 		go client.writePump()
 		go client.readPump()
@@ -166,7 +168,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(pingInterval)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		_ = c.conn.Close()
 	}()
 
 	for {
@@ -174,17 +176,17 @@ func (c *Client) writePump() {
 		case msg, ok := <-c.send:
 			if !ok {
 				// send channel closed; write a close frame and exit.
-				c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-				c.conn.WriteMessage(websocket.CloseMessage, nil)
+				_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+				_ = c.conn.WriteMessage(websocket.CloseMessage, nil)
 				return
 			}
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -225,13 +227,13 @@ func (c *Client) readPump() {
 		}
 		c.hub.mu.Unlock()
 
-		log.Println("WebSocket client disconnected")
+		slog.Info("websocket client disconnected", "user_id", c.UserID)
 	}()
 
-	c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.conn.SetReadLimit(65536) // 64KB max incoming message size
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+		_ = c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
 
@@ -289,7 +291,7 @@ func (h *Hub) SendToUserBytes(userID string, data []byte) {
 func (h *Hub) trySend(client *Client, userID string, data []byte) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("WS send recovered for user %s (client disconnected): %v", userID, r)
+			slog.Warn("ws send recovered, client disconnected", "user_id", userID, "panic", r)
 		}
 	}()
 
@@ -297,7 +299,7 @@ func (h *Hub) trySend(client *Client, userID string, data []byte) {
 	case client.send <- data:
 		// Message queued.
 	default:
-		log.Printf("WS push dropped for user %s: send buffer full", userID)
+		slog.Warn("ws push dropped, send buffer full", "user_id", userID)
 	}
 }
 

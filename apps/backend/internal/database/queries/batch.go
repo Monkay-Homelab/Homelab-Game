@@ -101,7 +101,7 @@ func LoadFullGameState(ctx context.Context, pool *pgxpool.Pool, userID string) (
 	)
 
 	br := pool.SendBatch(ctx, batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 
 	data := &FullGameData{GameState: &gs}
 
@@ -318,7 +318,7 @@ func LoadFullGameStateForUpdate(ctx context.Context, tx pgx.Tx, userID string) (
 	)
 
 	br := tx.SendBatch(ctx, batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 
 	data := &FullGameData{GameState: &gs}
 

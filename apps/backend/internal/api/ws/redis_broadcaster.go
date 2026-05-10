@@ -3,7 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -45,7 +45,7 @@ func (b *RedisBroadcaster) SendToUser(userID string, msg Message) {
 	bm := broadcastMessage{UserID: userID, Data: data}
 	payload, _ := json.Marshal(bm)
 	if err := b.rdb.Publish(context.Background(), wsBroadcastChannel, payload).Err(); err != nil {
-		log.Printf("[ws-pubsub] Redis publish error: %v", err)
+		slog.Warn("ws pubsub redis publish error", "user_id", userID, "error", err)
 	}
 }
 
@@ -57,7 +57,7 @@ func (b *RedisBroadcaster) SendToUserBytes(userID string, data []byte) {
 	bm := broadcastMessage{UserID: userID, Data: data}
 	payload, _ := json.Marshal(bm)
 	if err := b.rdb.Publish(context.Background(), wsBroadcastChannel, payload).Err(); err != nil {
-		log.Printf("[ws-pubsub] Redis publish error: %v", err)
+		slog.Warn("ws pubsub redis publish error", "user_id", userID, "error", err)
 	}
 }
 
@@ -88,6 +88,6 @@ func (b *RedisBroadcaster) listen() {
 func (b *RedisBroadcaster) Stop() {
 	close(b.done)
 	if b.pubsub != nil {
-		b.pubsub.Close()
+		_ = b.pubsub.Close()
 	}
 }

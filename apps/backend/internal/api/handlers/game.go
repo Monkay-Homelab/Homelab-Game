@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -327,7 +327,7 @@ func (h *GameHandler) processCustomerGrowth(ctx context.Context, gs *models.Game
 		for i := range svcs {
 			if svcs[i].ID == s.ID {
 				svcs[i].MoneyPerTick = newTotal
-				h.services.Update(ctx, &svcs[i])
+				_ = h.services.Update(ctx, &svcs[i])
 				break
 			}
 		}
@@ -441,10 +441,10 @@ func (h *GameHandler) runFullTick(ctx context.Context, userID string, ts *userTi
 	if groupBonus > 1.0 {
 		var idleCompute int64
 		for _, item := range hw {
-			idleCompute += int64(item.ComputePerTick)
+			idleCompute += item.ComputePerTick
 		}
 		for _, s := range svcs {
-			idleCompute += int64(s.ComputePerTick)
+			idleCompute += s.ComputePerTick
 		}
 		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
@@ -460,7 +460,7 @@ func (h *GameHandler) runFullTick(ctx context.Context, userID string, ts *userTi
 	}
 
 	for i := range custs {
-		h.customers.Update(ctx, &custs[i])
+		_ = h.customers.Update(ctx, &custs[i])
 	}
 
 	if len(triggered) > 0 {
@@ -545,10 +545,10 @@ func (h *GameHandler) runLightTick(ctx context.Context, userID string, ts *userT
 	if groupBonus > 1.0 {
 		var idleCompute int64
 		for _, item := range cd.Hardware {
-			idleCompute += int64(item.ComputePerTick)
+			idleCompute += item.ComputePerTick
 		}
 		for _, s := range svcs {
-			idleCompute += int64(s.ComputePerTick)
+			idleCompute += s.ComputePerTick
 		}
 		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
@@ -605,8 +605,8 @@ func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
 	h.tickState.Set(userID, &userTickState{dirty: true})
 
 	go func() {
-		log.Printf("[tick] goroutine started for user %s (interval=%s)", userID, h.tickInterval)
-		defer log.Printf("[tick] goroutine stopped for user %s", userID)
+		slog.Debug("tick goroutine started", "user_id", userID, "interval", h.tickInterval)
+		defer slog.Debug("tick goroutine stopped", "user_id", userID)
 
 		ticker := time.NewTicker(h.tickInterval)
 		defer ticker.Stop()
@@ -615,7 +615,7 @@ func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
 		// gets state right away without waiting for the first tick).
 		initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := h.runUserTick(initCtx, userID); err != nil {
-			log.Printf("[tick] initial tick error for user %s: %v", userID, err)
+			slog.Error("initial tick error", "user_id", userID, "error", err)
 		}
 		initCancel()
 
@@ -624,7 +624,7 @@ func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
 			case <-ticker.C:
 				tickCtx, tickCancel := context.WithTimeout(context.Background(), 10*time.Second)
 				if err := h.runUserTick(tickCtx, userID); err != nil {
-					log.Printf("[tick] error for user %s: %v", userID, err)
+					slog.Error("tick error", "user_id", userID, "error", err)
 				}
 				tickCancel()
 			case <-done:
@@ -639,13 +639,13 @@ func (h *GameHandler) OnConnect(userID string, done <-chan struct{}) {
 // exists for observability logging and any future cleanup needs.
 func (h *GameHandler) OnDisconnect(userID string) {
 	h.tickState.Delete(userID)
-	log.Printf("[tick] user %s disconnected", userID)
+	slog.Debug("tick user disconnected", "user_id", userID)
 }
 
 func (h *GameHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	cfg := engine.GetConfig()
-	json.NewEncoder(w).Encode(cfg)
+	_ = json.NewEncoder(w).Encode(cfg)
 }
 
 func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
@@ -696,10 +696,10 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		// Compute idle rate and add group bonus portion
 		var idleCompute int64
 		for _, hw := range hw {
-			idleCompute += int64(hw.ComputePerTick)
+			idleCompute += hw.ComputePerTick
 		}
 		for _, s := range svcs {
-			idleCompute += int64(s.ComputePerTick)
+			idleCompute += s.ComputePerTick
 		}
 		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
@@ -716,7 +716,7 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := range custs {
-		h.customers.Update(r.Context(), &custs[i])
+		_ = h.customers.Update(r.Context(), &custs[i])
 	}
 
 	if len(triggered) > 0 {
@@ -730,7 +730,7 @@ func (h *GameHandler) GetState(w http.ResponseWriter, r *http.Request) {
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
 	resp.GlobalDonatedCU = h.globalCUCache.Get()
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 type actionRequest struct {
@@ -795,10 +795,10 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	if groupBonus > 1.0 {
 		var idleCompute int64
 		for _, h := range hw {
-			idleCompute += int64(h.ComputePerTick)
+			idleCompute += h.ComputePerTick
 		}
 		for _, s := range svcs {
-			idleCompute += int64(s.ComputePerTick)
+			idleCompute += s.ComputePerTick
 		}
 		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
@@ -937,11 +937,11 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 
 	// Handle prestige — wipe non-persistent data
 	if result.Prestige {
-		h.hardware.DeleteByGameStateID(r.Context(), gs.ID)
-		h.services.DeleteByGameStateID(r.Context(), gs.ID)
-		h.customers.DeleteByGameStateID(r.Context(), gs.ID)
-		h.expenses.DeleteByGameStateID(r.Context(), gs.ID)
-		h.upgrades.DeleteNonPersistent(r.Context(), gs.ID)
+		_ = h.hardware.DeleteByGameStateID(r.Context(), gs.ID)
+		_ = h.services.DeleteByGameStateID(r.Context(), gs.ID)
+		_ = h.customers.DeleteByGameStateID(r.Context(), gs.ID)
+		_ = h.expenses.DeleteByGameStateID(r.Context(), gs.ID)
+		_ = h.upgrades.DeleteNonPersistent(r.Context(), gs.ID)
 		hw = nil
 		svcs = nil
 		custs = nil
@@ -1007,7 +1007,7 @@ func (h *GameHandler) PerformAction(w http.ResponseWriter, r *http.Request) {
 	resp.GroupBonus = groupBonus
 	resp.GroupMembers = groupMembers
 	resp.GlobalDonatedCU = h.globalCUCache.Get()
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 
 	// Push the same state over WebSocket for immediate client refresh.
 	// Fire-and-forget: if the user has no WS connection or the send buffer
@@ -1107,7 +1107,7 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 			if locked {
 				h.userLocks.Unlock(userID)
 			}
-			log.Printf("[ws-action] user=%s action=%s id=%s panic=%v", userID, req.Action, req.ID, r)
+			slog.Error("ws action panic recovered", "user_id", userID, "action", req.Action, "request_id", req.ID, "panic", r)
 			result := wsActionResult{
 				Type:    "action_result",
 				ID:      req.ID,
@@ -1178,10 +1178,10 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 	if groupBonus > 1.0 {
 		idleCompute := int64(0)
 		for _, item := range hw {
-			idleCompute += int64(item.ComputePerTick)
+			idleCompute += item.ComputePerTick
 		}
 		for _, s := range svcs {
-			idleCompute += int64(s.ComputePerTick)
+			idleCompute += s.ComputePerTick
 		}
 		groupExtra := int64(float64(idleCompute) * elapsed * (groupBonus - 1.0))
 		gs.ComputeUnits += groupExtra
@@ -1211,11 +1211,11 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 
 	// Persist action results
 	if result.NewHardware != nil {
-		h.hardware.Create(tickCtx, result.NewHardware)
+		_ = h.hardware.Create(tickCtx, result.NewHardware)
 		hw = append(hw, *result.NewHardware)
 	}
 	if result.RemoveHardware != "" {
-		h.hardware.DeleteByID(tickCtx, result.RemoveHardware)
+		_ = h.hardware.DeleteByID(tickCtx, result.RemoveHardware)
 		filtered := hw[:0]
 		for _, item := range hw {
 			if item.ID != result.RemoveHardware {
@@ -1225,26 +1225,26 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 		hw = filtered
 	}
 	if result.NewService != nil {
-		h.services.Create(tickCtx, result.NewService)
+		_ = h.services.Create(tickCtx, result.NewService)
 		svcs = append(svcs, *result.NewService)
 	}
 	if result.NewUpgrade != nil {
-		h.upgrades.Create(tickCtx, result.NewUpgrade)
+		_ = h.upgrades.Create(tickCtx, result.NewUpgrade)
 		ups = append(ups, *result.NewUpgrade)
 	}
 	if result.NewCustomer != nil {
-		h.customers.Create(tickCtx, result.NewCustomer)
+		_ = h.customers.Create(tickCtx, result.NewCustomer)
 		custs = append(custs, *result.NewCustomer)
 	}
 	for i := range result.NewExpenses {
-		h.expenses.Create(tickCtx, &result.NewExpenses[i])
+		_ = h.expenses.Create(tickCtx, &result.NewExpenses[i])
 		exps = append(exps, result.NewExpenses[i])
 	}
 	if result.ComponentUpgrade != nil {
-		h.components.Upsert(tickCtx, result.ComponentUpgrade)
+		_ = h.components.Upsert(tickCtx, result.ComponentUpgrade)
 	}
 	if result.ResearchLevel != nil {
-		h.research.Upsert(tickCtx, result.ResearchLevel)
+		_ = h.research.Upsert(tickCtx, result.ResearchLevel)
 		found := false
 		for i := range researchLevels {
 			if researchLevels[i].ResearchNode == result.ResearchLevel.ResearchNode {
@@ -1259,19 +1259,19 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 	}
 	// Bulk persistence
 	for i := range result.NewServices {
-		h.services.Create(tickCtx, &result.NewServices[i])
+		_ = h.services.Create(tickCtx, &result.NewServices[i])
 		svcs = append(svcs, result.NewServices[i])
 	}
 	for i := range result.NewUpgrades {
-		h.upgrades.Create(tickCtx, &result.NewUpgrades[i])
+		_ = h.upgrades.Create(tickCtx, &result.NewUpgrades[i])
 		ups = append(ups, result.NewUpgrades[i])
 	}
 	for i := range result.NewCustomers {
-		h.customers.Create(tickCtx, &result.NewCustomers[i])
+		_ = h.customers.Create(tickCtx, &result.NewCustomers[i])
 		custs = append(custs, result.NewCustomers[i])
 	}
 	for i := range result.ComponentUpgrades {
-		h.components.Upsert(tickCtx, &result.ComponentUpgrades[i])
+		_ = h.components.Upsert(tickCtx, &result.ComponentUpgrades[i])
 		found := false
 		for j := range compUps {
 			if compUps[j].HardwareID == result.ComponentUpgrades[i].HardwareID && compUps[j].Component == result.ComponentUpgrades[i].Component {
@@ -1286,11 +1286,11 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 	}
 
 	if result.Prestige {
-		h.hardware.DeleteByGameStateID(tickCtx, gs.ID)
-		h.services.DeleteByGameStateID(tickCtx, gs.ID)
-		h.customers.DeleteByGameStateID(tickCtx, gs.ID)
-		h.expenses.DeleteByGameStateID(tickCtx, gs.ID)
-		h.upgrades.DeleteNonPersistent(tickCtx, gs.ID)
+		_ = h.hardware.DeleteByGameStateID(tickCtx, gs.ID)
+		_ = h.services.DeleteByGameStateID(tickCtx, gs.ID)
+		_ = h.customers.DeleteByGameStateID(tickCtx, gs.ID)
+		_ = h.expenses.DeleteByGameStateID(tickCtx, gs.ID)
+		_ = h.upgrades.DeleteNonPersistent(tickCtx, gs.ID)
 		hw = nil
 		svcs = nil
 		custs = nil
@@ -1305,11 +1305,11 @@ func (h *GameHandler) HandleWSAction(userID string, data []byte) {
 	}
 
 	if result.NewColoRack != nil {
-		h.coloRacks.Create(tickCtx, result.NewColoRack)
+		_ = h.coloRacks.Create(tickCtx, result.NewColoRack)
 		colos = append(colos, *result.NewColoRack)
 	}
 
-	h.gameState.Update(tickCtx, gs)
+	_ = h.gameState.Update(tickCtx, gs)
 
 	// Update global donated CU cache for donate_cu actions
 	if req.Action == "donate_cu" {

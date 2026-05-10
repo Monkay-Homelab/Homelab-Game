@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -29,7 +29,7 @@ func (s *RedisRateLimitStore) CheckRate(ctx context.Context, key string, maxPerM
 
 	result, err := script.Run(ctx, s.rdb, []string{"rl:" + key}).Int()
 	if err != nil {
-		log.Printf("[ratelimit] Redis error, failing open: %v", err)
+		slog.Warn("ratelimit redis error, failing open", "key", key, "error", err)
 		return true
 	}
 	return result <= maxPerMinute

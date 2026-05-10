@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/homelab-game/backend/internal/api/middleware"
@@ -56,12 +56,12 @@ func (h *SocialHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add founder as member
-	h.groups.AddMember(r.Context(), group.ID, userID, "founder")
+	_ = h.groups.AddMember(r.Context(), group.ID, userID, "founder")
 
 	members, _ := h.groups.GetMembers(r.Context(), group.ID)
 	pool, _ := h.groups.GetGroupComputePool(r.Context(), group.ID)
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"group": group, "members": members, "compute_pool": pool,
 	})
 }
@@ -92,12 +92,12 @@ func (h *SocialHandler) JoinGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.groups.AddMember(r.Context(), group.ID, userID, "member")
+	_ = h.groups.AddMember(r.Context(), group.ID, userID, "member")
 
 	members, _ := h.groups.GetMembers(r.Context(), group.ID)
 	pool, _ := h.groups.GetGroupComputePool(r.Context(), group.ID)
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"group": group, "members": members, "compute_pool": pool,
 	})
 }
@@ -114,12 +114,12 @@ func (h *SocialHandler) LeaveGroup(w http.ResponseWriter, r *http.Request) {
 
 	if member.Role == "founder" {
 		// Founder leaving deletes the group
-		h.groups.Delete(r.Context(), group.ID)
+		_ = h.groups.Delete(r.Context(), group.ID)
 	} else {
-		h.groups.RemoveMember(r.Context(), group.ID, userID)
+		_ = h.groups.RemoveMember(r.Context(), group.ID, userID)
 	}
 
-	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
 // GET /api/social/group
@@ -128,14 +128,14 @@ func (h *SocialHandler) GetMyGroup(w http.ResponseWriter, r *http.Request) {
 
 	group, member, err := h.groups.GetUserGroup(r.Context(), userID)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]any{"group": nil})
+		_ = json.NewEncoder(w).Encode(map[string]any{"group": nil})
 		return
 	}
 
 	members, _ := h.groups.GetMembers(r.Context(), group.ID)
 	pool, _ := h.groups.GetGroupComputePool(r.Context(), group.ID)
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"group": group, "members": members, "my_role": member.Role, "compute_pool": pool,
 	})
 }
@@ -143,7 +143,7 @@ func (h *SocialHandler) GetMyGroup(w http.ResponseWriter, r *http.Request) {
 // GET /api/social/groups
 func (h *SocialHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	groups, _ := h.groups.List(r.Context(), 50)
-	json.NewEncoder(w).Encode(map[string]any{"groups": groups})
+	_ = json.NewEncoder(w).Encode(map[string]any{"groups": groups})
 }
 
 // POST /api/social/group/promote
@@ -178,10 +178,10 @@ func (h *SocialHandler) PromoteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.groups.SetRole(r.Context(), group.ID, req.UserID, "admin")
+	_ = h.groups.SetRole(r.Context(), group.ID, req.UserID, "admin")
 	members, _ := h.groups.GetMembers(r.Context(), group.ID)
 
-	json.NewEncoder(w).Encode(map[string]any{"members": members})
+	_ = json.NewEncoder(w).Encode(map[string]any{"members": members})
 }
 
 // POST /api/social/group/kick
@@ -221,10 +221,10 @@ func (h *SocialHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.groups.RemoveMember(r.Context(), group.ID, req.UserID)
+	_ = h.groups.RemoveMember(r.Context(), group.ID, req.UserID)
 	members, _ := h.groups.GetMembers(r.Context(), group.ID)
 
-	json.NewEncoder(w).Encode(map[string]any{"members": members})
+	_ = json.NewEncoder(w).Encode(map[string]any{"members": members})
 }
 
 // GET /api/social/leaderboard?category=compute
@@ -237,23 +237,23 @@ func (h *SocialHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	if category == "group" {
 		entries, err := h.leaderboard.GetTopGroups(r.Context(), 50)
 		if err != nil {
-			log.Printf("leaderboard query error (group): %v", err)
+			slog.Error("leaderboard query error", "category", "group", "error", err)
 		}
 		if entries == nil {
 			entries = []models.LeaderboardEntry{}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"category": category, "entries": entries})
+		_ = json.NewEncoder(w).Encode(map[string]any{"category": category, "entries": entries})
 		return
 	}
 
 	entries, err := h.leaderboard.GetTopByCategory(r.Context(), category, 50)
 	if err != nil {
-		log.Printf("leaderboard query error (%s): %v", category, err)
+		slog.Error("leaderboard query error", "category", category, "error", err)
 	}
 	if entries == nil {
 		entries = []models.LeaderboardEntry{}
 	}
-	json.NewEncoder(w).Encode(map[string]any{"category": category, "entries": entries})
+	_ = json.NewEncoder(w).Encode(map[string]any{"category": category, "entries": entries})
 }
 
 // POST /api/social/leaderboard/update — called internally to refresh scores
@@ -267,11 +267,11 @@ func (h *SocialHandler) UpdateLeaderboards(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Update all leaderboard categories for this user
-	h.leaderboard.UpdateScore(r.Context(), userID, "compute", gs.ComputeUnits)
-	h.leaderboard.UpdateScore(r.Context(), userID, "reputation", gs.Reputation)
-	h.leaderboard.UpdateScore(r.Context(), userID, "colo_count", int64(gs.ColoCount))
-	h.leaderboard.UpdateScore(r.Context(), userID, "money", gs.Money)
-	h.leaderboard.UpdateScore(r.Context(), userID, "bitcoin_balance", gs.BitcoinBalance)
+	_ = h.leaderboard.UpdateScore(r.Context(), userID, "compute", gs.ComputeUnits)
+	_ = h.leaderboard.UpdateScore(r.Context(), userID, "reputation", gs.Reputation)
+	_ = h.leaderboard.UpdateScore(r.Context(), userID, "colo_count", int64(gs.ColoCount))
+	_ = h.leaderboard.UpdateScore(r.Context(), userID, "money", gs.Money)
+	_ = h.leaderboard.UpdateScore(r.Context(), userID, "bitcoin_balance", gs.BitcoinBalance)
 
-	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }

@@ -46,11 +46,12 @@ func Setup(authHandler *handlers.AuthHandler, gameHandler *handlers.GameHandler,
 	mux.Handle("GET /api/social/leaderboard", authMw(http.HandlerFunc(socialHandler.GetLeaderboard)))
 	mux.Handle("POST /api/social/leaderboard/update", authMw(http.HandlerFunc(socialHandler.UpdateLeaderboards)))
 
-	// Apply global middleware
+	// Apply global middleware (outermost wraps first — RequestLogger sees every request)
 	var handler http.Handler = mux
 	handler = middleware.MaxBodySize(handler)
 	handler = middleware.JSON(handler)
 	handler = middleware.CORS(handler)
+	handler = middleware.RequestLogger(handler)
 
 	return handler
 }

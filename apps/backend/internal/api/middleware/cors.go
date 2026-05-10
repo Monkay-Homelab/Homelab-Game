@@ -8,10 +8,12 @@ import (
 
 var allowedOrigins = func() map[string]bool {
 	origins := map[string]bool{
-		"https://game.homelab.living": true,
-		"http://game.homelab.living":  true,
-		"https://homelab.living":      true,
-		"http://homelab.living":       true,
+		"https://game.homelab.living":     true,
+		"http://game.homelab.living":      true,
+		"https://homelab.living":          true,
+		"http://homelab.living":           true,
+		"https://dev-game.homelab.living": true,
+		"http://dev-game.homelab.living":  true,
 	}
 	// Allow extra origins from env (comma-separated)
 	if extra := os.Getenv("CORS_ORIGINS"); extra != "" {

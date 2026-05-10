@@ -4,10 +4,20 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 )
+
+// parseBool returns true for "true", "1", "yes" (case-insensitive), false otherwise.
+func parseBool(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
 
 type Config struct {
 	Port      string
@@ -21,6 +31,8 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
+
+	RegistrationEnabled bool
 }
 
 func Load() *Config {
@@ -28,9 +40,9 @@ func Load() *Config {
 	if jwtSecret == "" {
 		// Generate a random secret for dev — warn loudly
 		b := make([]byte, 32)
-		rand.Read(b)
+		_, _ = rand.Read(b)
 		jwtSecret = hex.EncodeToString(b)
-		log.Println("WARNING: JWT_SECRET not set — using random secret. Set JWT_SECRET in .env or Docker secret for persistent sessions.")
+		slog.Warn("JWT_SECRET not set, using random secret -- set JWT_SECRET in .env or Docker secret for persistent sessions")
 	}
 
 	return &Config{
@@ -45,6 +57,8 @@ func Load() *Config {
 		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword: getSecret("REDIS_PASSWORD", "redis_password", ""),
 		RedisDB:       0,
+
+		RegistrationEnabled: parseBool(getEnv("REGISTRATION_ENABLED", "true")),
 	}
 }
 

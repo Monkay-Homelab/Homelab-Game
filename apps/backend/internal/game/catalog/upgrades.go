@@ -85,21 +85,23 @@ var KnowledgePointValues = map[string]int{
 	"CKA":              40,
 }
 
-// Component upgrade costs per level
+// Component upgrade costs per level — costs scale relative to hardware purchase price.
+// CostFraction is the fraction of the hardware's Cost used as the base upgrade cost.
+// Actual cost = hardware.Cost * CostFraction * CostScale^currentLevel
 type ComponentUpgradeInfo struct {
 	Component      string  `json:"component"`
 	MaxLevel       int     `json:"max_level"`
-	BaseCost       int64   `json:"base_cost"`
+	CostFraction   float64 `json:"cost_fraction"`
 	CostScale      float64 `json:"cost_scale"`
 	ComputePercent int     `json:"compute_percent"` // % of base compute per level
 	PowerReduce    int     `json:"power_reduce"`
 }
 
 var ComponentUpgrades = []ComponentUpgradeInfo{
-	{Component: "cpu", MaxLevel: 5, BaseCost: 500, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
-	{Component: "ram", MaxLevel: 5, BaseCost: 300, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
-	{Component: "storage", MaxLevel: 5, BaseCost: 400, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
-	{Component: "nic", MaxLevel: 3, BaseCost: 600, CostScale: 2.5, ComputePercent: 5, PowerReduce: 5},
+	{Component: "cpu", MaxLevel: 5, CostFraction: 0.20, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
+	{Component: "ram", MaxLevel: 5, CostFraction: 0.15, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
+	{Component: "storage", MaxLevel: 5, CostFraction: 0.18, CostScale: 2.0, ComputePercent: 5, PowerReduce: 0},
+	{Component: "nic", MaxLevel: 3, CostFraction: 0.25, CostScale: 2.5, ComputePercent: 5, PowerReduce: 5},
 }
 
 func GetComponentUpgradeInfo(component string) *ComponentUpgradeInfo {

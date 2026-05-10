@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -63,7 +63,7 @@ func (c *GlobalDonatedCUCache) Get() int64 {
 		if err == nil {
 			return val
 		}
-		log.Printf("[cu-cache] Redis Get error (falling back to local): %v", err)
+		slog.Warn("cu-cache redis get error, falling back to local", "error", err)
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -79,12 +79,12 @@ func (c *GlobalDonatedCUCache) refresh(ctx context.Context) {
 	var val int64
 	err := c.pool.QueryRow(ctx, "SELECT COALESCE(SUM(total_donated_cu), 0) FROM game_states").Scan(&val)
 	if err != nil {
-		log.Printf("[cu-cache] refresh error: %v", err)
+		slog.Error("cu-cache refresh error", "error", err)
 		return // keep stale value
 	}
 	elapsed := time.Since(start)
 	if elapsed > time.Second {
-		log.Printf("[cu-cache] slow refresh: %v", elapsed)
+		slog.Warn("cu-cache slow refresh", "duration", elapsed)
 	}
 	c.mu.Lock()
 	c.value = val
@@ -92,7 +92,7 @@ func (c *GlobalDonatedCUCache) refresh(ctx context.Context) {
 
 	if c.rdb != nil {
 		if err := c.rdb.Set(ctx, redisCUKey, val, 60*time.Second).Err(); err != nil {
-			log.Printf("[cu-cache] Redis Set error: %v", err)
+			slog.Warn("cu-cache redis set error", "error", err)
 		}
 	}
 }
@@ -106,7 +106,7 @@ func (c *GlobalDonatedCUCache) refresh(ctx context.Context) {
 func (c *GlobalDonatedCUCache) Add(amount int64) {
 	if c.rdb != nil {
 		if err := c.rdb.IncrBy(context.Background(), redisCUKey, amount).Err(); err != nil {
-			log.Printf("[cu-cache] Redis IncrBy error (local-only update): %v", err)
+			slog.Warn("cu-cache redis incrby error, local-only update", "error", err)
 		}
 	}
 	c.mu.Lock()

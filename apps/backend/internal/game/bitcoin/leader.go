@@ -2,7 +2,7 @@ package bitcoin
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -47,7 +47,7 @@ func (l *PriceLeader) electionLoop(ctx context.Context) {
 		case <-l.done:
 			if l.IsLeader() {
 				l.rdb.Del(ctx, leaderKey)
-				log.Printf("[bitcoin-leader] released leadership: %s", l.replicaID)
+				slog.Info("bitcoin leader released leadership", "replica_id", l.replicaID)
 			}
 			return
 		case <-ctx.Done():
@@ -57,14 +57,14 @@ func (l *PriceLeader) electionLoop(ctx context.Context) {
 }
 
 func (l *PriceLeader) tryAcquireOrRenew(ctx context.Context) {
-	ok, err := l.rdb.SetNX(ctx, leaderKey, l.replicaID, leaderTTL).Result()
-	if err != nil {
+	result, err := l.rdb.SetArgs(ctx, leaderKey, l.replicaID, redis.SetArgs{Mode: "NX", TTL: leaderTTL}).Result()
+	if err != nil && err != redis.Nil {
 		return
 	}
-	if ok {
+	if result == "OK" {
 		l.mu.Lock()
 		if !l.isLeader {
-			log.Printf("[bitcoin-leader] acquired leadership: %s", l.replicaID)
+			slog.Info("bitcoin leader acquired leadership", "replica_id", l.replicaID)
 		}
 		l.isLeader = true
 		l.mu.Unlock()
@@ -82,7 +82,7 @@ func (l *PriceLeader) tryAcquireOrRenew(ctx context.Context) {
 	} else {
 		l.mu.Lock()
 		if l.isLeader {
-			log.Printf("[bitcoin-leader] lost leadership: %s", l.replicaID)
+			slog.Info("bitcoin leader lost leadership", "replica_id", l.replicaID)
 		}
 		l.isLeader = false
 		l.mu.Unlock()

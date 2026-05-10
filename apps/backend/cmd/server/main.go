@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,19 +23,28 @@ import (
 	"github.com/homelab-game/backend/internal/database/queries"
 	"github.com/homelab-game/backend/internal/game/bitcoin"
 	"github.com/homelab-game/backend/internal/game/engine"
+	"github.com/homelab-game/backend/internal/logging"
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("fatal error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	loadEnvFile()
+	logging.Init()
 
 	cfg := config.Load()
 
 	pool, err := database.Connect(cfg.DatabaseURL())
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer pool.Close()
-	log.Println("Connected to database")
+	slog.Info("connected to database")
 
 	// Connect to Redis (optional — graceful degradation if unavailable)
 	var rdb *redis.Client
@@ -45,16 +54,16 @@ func main() {
 		DB:       cfg.RedisDB,
 	})
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Printf("WARNING: Redis unavailable at %s: %v — running without Redis", cfg.RedisAddr, err)
+		slog.Warn("redis unavailable, running without redis", "addr", cfg.RedisAddr, "error", err)
 		rdb = nil
 	} else {
-		log.Printf("Connected to Redis at %s", cfg.RedisAddr)
-		defer rdb.Close()
+		slog.Info("connected to redis", "addr", cfg.RedisAddr)
+		defer func() { _ = rdb.Close() }()
 	}
 	// Wire Redis-backed services when available
 	if rdb != nil {
 		middleware.SetRateLimitStore(middleware.NewRedisRateLimitStore(rdb))
-		log.Println("Rate limiting backed by Redis")
+		slog.Info("rate limiting backed by redis")
 	}
 
 	userQueries := queries.NewUserQueries(pool)
@@ -84,17 +93,17 @@ func main() {
 		priceLeader.Start(context.Background())
 		defer priceLeader.Stop()
 		bitcoinService.SetLeader(priceLeader)
-		log.Printf("Bitcoin price leader election started (replica: %s)", replicaID)
+		slog.Info("bitcoin price leader election started", "replica_id", replicaID)
 	}
 
 	// Create message broadcaster (Redis-backed if available, local otherwise)
 	var broadcaster ws.MessageBroadcaster
 	if rdb != nil {
 		rb := ws.NewRedisBroadcaster(wsHub, rdb)
-		rb.Start(context.Background())
+		_ = rb.Start(context.Background())
 		defer rb.Stop()
 		broadcaster = rb
-		log.Println("WebSocket broadcasting backed by Redis pub/sub")
+		slog.Info("websocket broadcasting backed by redis pub/sub")
 	} else {
 		broadcaster = ws.NewLocalBroadcaster(wsHub)
 	}
@@ -102,9 +111,9 @@ func main() {
 	// Cache the global donated CU sum to eliminate per-request full table scans.
 	// Blocking initial load ensures the cache is populated before accepting connections.
 	globalCUCache := handlers.NewGlobalDonatedCUCache(pool, rdb, 30*time.Second)
-	log.Println("Global donated CU cache initialized")
+	slog.Info("global donated CU cache initialized")
 
-	authHandler := handlers.NewAuthHandler(userQueries, gameStateQueries, cfg.JWTSecret)
+	authHandler := handlers.NewAuthHandler(userQueries, gameStateQueries, cfg.JWTSecret, cfg.RegistrationEnabled)
 	gameHandler := handlers.NewGameHandler(pool, gameStateQueries, hardwareQueries, serviceQueries, upgradeQueries, componentQueries, customerQueries, expenseQueries, coloRackQueries, groupQueries, researchLevelQueries, gameEngine, wsHub, broadcaster, bitcoinService, globalCUCache)
 	socialHandler := handlers.NewSocialHandler(groupQueries, leaderboardQueries, gameStateQueries)
 
@@ -122,8 +131,12 @@ func main() {
 
 	addr := ":" + cfg.Port
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Graceful shutdown: listen for SIGTERM/SIGINT, drain connections.
@@ -132,19 +145,20 @@ func main() {
 
 	go func() {
 		<-quit
-		log.Println("Shutting down server (10s grace period)...")
+		slog.Info("shutting down server", "grace_period", "10s")
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("Server shutdown error: %v", err)
+			slog.Error("server shutdown error", "error", err)
 		}
 	}()
 
-	log.Printf("Homelab Game API starting on %s", addr)
+	slog.Info("homelab game API starting", "addr", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+		return fmt.Errorf("server listen error: %w", err)
 	}
-	log.Println("Server stopped")
+	slog.Info("server stopped")
+	return nil
 }
 
 // bitcoinStoreAdapter adapts queries.BitcoinQueries to the bitcoin.PriceStore interface.
@@ -202,6 +216,6 @@ func loadEnvFile() {
 		if !ok {
 			continue
 		}
-		os.Setenv(strings.TrimSpace(key), strings.TrimSpace(val))
+		_ = os.Setenv(strings.TrimSpace(key), strings.TrimSpace(val))
 	}
 }
