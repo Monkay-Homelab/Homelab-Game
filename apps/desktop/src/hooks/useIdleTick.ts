@@ -8,7 +8,10 @@ interface InterpolatedCurrencies {
   computePerSecond: number;
 }
 
-export function useIdleTick(state: GameState | null, config: GameConfig | null): InterpolatedCurrencies {
+export function useIdleTick(
+  state: GameState | null,
+  config: GameConfig | null,
+): InterpolatedCurrencies {
   const [currencies, setCurrencies] = useState<InterpolatedCurrencies>({
     computeUnits: 0,
     reputation: 0,
@@ -17,7 +20,7 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
   });
   const rafId = useRef<number>(0);
   const serverBase = useRef({ compute: 0, reputation: 0, money: 0 });
-  const serverTime = useRef(Date.now());
+  const serverTime = useRef(0);
   const rates = useRef({ compute: 0, reputation: 0, money: 0 });
   const initialized = useRef(false);
 
@@ -50,7 +53,8 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
       for (const h of state.hardware) {
         let bonus = 0;
         for (const cu of compUps) {
-          if (cu.hardware_id === h.id) bonus += Math.floor(h.compute_per_tick * cu.compute_bonus / 100);
+          if (cu.hardware_id === h.id)
+            bonus += Math.floor((h.compute_per_tick * cu.compute_bonus) / 100);
         }
         hardwareCompute += h.compute_per_tick + bonus;
 
@@ -79,16 +83,15 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
 
     // Multipliers matching server's ProcessIdleProgress (defensive defaults for missing fields)
     const heatPenalty = state.overheating ? gp.heat_penalty : 1.0;
-    const throttle = state.throttled ? (state.throttle_multiplier || 0) : 1.0;
+    const throttle = state.throttled ? state.throttle_multiplier || 0 : 1.0;
     const knowledgeBoost = 1.0 + (state.knowledge_points || 0) / gp.knowledge_boost_divisor;
     const netMult = 1.0 + networkBonus;
     const repMult = 1.0 + storageBonus + patchPanelBonus;
     const coloMult = state.colo_multiplier || 1.0;
     const idleMult = state.idle_multiplier || 1.0;
     // Overclock multiplier: defensive check ensures it never reduces income (matches server guard)
-    const overclockMult = (state.overclocked && state.overclock_multiplier > 1)
-      ? state.overclock_multiplier
-      : 1.0;
+    const overclockMult =
+      state.overclocked && state.overclock_multiplier > 1 ? state.overclock_multiplier : 1.0;
     const baseMultiplier = coloMult * idleMult * heatPenalty * throttle * overclockMult;
 
     // Research bonuses: aggregate by effect type (additive within type, multiplicative across)
@@ -97,7 +100,7 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
     let researchMoneyMult = 1.0;
     if (state.research_levels && config.research?.nodes) {
       for (const rl of state.research_levels) {
-        const node = config.research.nodes.find(n => n.id === rl.research_node);
+        const node = config.research.nodes.find((n) => n.id === rl.research_node);
         if (node) {
           const bonus = rl.level * node.effect_value;
           if (node.effect_type === 'idle_income') researchIdleMult += bonus;
@@ -108,7 +111,8 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
     }
 
     // Base compute rate (hw + svc with all multipliers)
-    const baseComputeRate = totalCompute * baseMultiplier * knowledgeBoost * netMult * researchIdleMult;
+    const baseComputeRate =
+      totalCompute * baseMultiplier * knowledgeBoost * netMult * researchIdleMult;
 
     // Colo rack income — server only applies datacenterIncomeMultiplier, NOT the other multipliers
     let coloComputeRate = 0;
@@ -148,7 +152,8 @@ export function useIdleTick(state: GameState | null, config: GameConfig | null):
         totalExpenses += e.cost_per_tick;
       }
     }
-    const moneyRate = serviceMoney * heatPenalty * throttle * researchMoneyMult + coloMoneyRate - totalExpenses;
+    const moneyRate =
+      serviceMoney * heatPenalty * throttle * researchMoneyMult + coloMoneyRate - totalExpenses;
 
     // Guard against NaN propagation — fall back to 0 if any calculation produced NaN
     rates.current = {

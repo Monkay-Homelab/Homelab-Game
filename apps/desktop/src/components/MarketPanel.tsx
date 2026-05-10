@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import type { GameState, BitcoinPricePoint } from '../api';
 import { useGameStore } from '../stores/gameStore';
 import { useConfig } from '../hooks/useConfig';
+import { CURRENCY_COLORS } from '../utils/currencyColors';
 
 function formatCurrency(n: number): string {
   if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1) + 'M';
@@ -9,7 +10,15 @@ function formatCurrency(n: number): string {
   return '$' + n.toString();
 }
 
-function PriceChart({ history, minPrice, maxPrice }: { history: BitcoinPricePoint[]; minPrice: number; maxPrice: number }) {
+function PriceChart({
+  history,
+  minPrice,
+  maxPrice,
+}: {
+  history: BitcoinPricePoint[];
+  minPrice: number;
+  maxPrice: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const draw = useCallback(() => {
@@ -32,7 +41,7 @@ function PriceChart({ history, minPrice, maxPrice }: { history: BitcoinPricePoin
     const chartH = h - padding.top - padding.bottom;
 
     // Compute price bounds from data with some margin
-    const prices = history.map(p => p.price);
+    const prices = history.map((p) => p.price);
     const dataMin = Math.min(...prices);
     const dataMax = Math.max(...prices);
     const margin = Math.max((dataMax - dataMin) * 0.1, 100);
@@ -115,28 +124,30 @@ function PriceChart({ history, minPrice, maxPrice }: { history: BitcoinPricePoin
   if (history.length < 2) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>Waiting for price data...</span>
+        <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+          Waiting for price data...
+        </span>
       </div>
     );
   }
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="w-full flex-1"
-      style={{ minHeight: 0 }}
-    />
-  );
+  return <canvas ref={canvasRef} className="w-full flex-1" style={{ minHeight: 0 }} />;
 }
 
 export function MarketPanel({ state }: { state: GameState }) {
   const config = useConfig();
-  const btcConfig = config.bitcoin ?? { min_price: 1000, max_price: 50000, step_interval: 5, mean_price: 10000, buy_compute_cost_per_btc: 100000 };
-  const buyBitcoin = useGameStore(s => s.buyBitcoin);
-  const buyMaxBitcoin = useGameStore(s => s.buyMaxBitcoin);
-  const sellBitcoin = useGameStore(s => s.sellBitcoin);
-  const sellAllBitcoin = useGameStore(s => s.sellAllBitcoin);
-  const storeError = useGameStore(s => s.error);
+  const btcConfig = config.bitcoin ?? {
+    min_price: 1000,
+    max_price: 50000,
+    step_interval: 5,
+    mean_price: 10000,
+    buy_compute_cost_per_btc: 100000,
+  };
+  const buyBitcoin = useGameStore((s) => s.buyBitcoin);
+  const buyMaxBitcoin = useGameStore((s) => s.buyMaxBitcoin);
+  const sellBitcoin = useGameStore((s) => s.sellBitcoin);
+  const sellAllBitcoin = useGameStore((s) => s.sellAllBitcoin);
+  const storeError = useGameStore((s) => s.error);
 
   const [buyAmount, setBuyAmount] = useState(1);
   const [sellAmount, setSellAmount] = useState(1);
@@ -149,8 +160,14 @@ export function MarketPanel({ state }: { state: GameState }) {
   // Determine price direction
   const prevPrice = history.length >= 2 ? history[history.length - 2].price : price;
   const priceDirection = price > prevPrice ? 'up' : price < prevPrice ? 'down' : 'flat';
-  const directionIcon = priceDirection === 'up' ? '\u25B2' : priceDirection === 'down' ? '\u25BC' : '\u2014';
-  const directionColor = priceDirection === 'up' ? 'var(--accent-green)' : priceDirection === 'down' ? 'var(--accent-red)' : 'var(--text-muted)';
+  const directionIcon =
+    priceDirection === 'up' ? '\u25B2' : priceDirection === 'down' ? '\u25BC' : '\u2014';
+  const directionColor =
+    priceDirection === 'up'
+      ? 'var(--accent-green)'
+      : priceDirection === 'down'
+        ? 'var(--accent-red)'
+        : 'var(--text-muted)';
 
   // Portfolio calculations
   const btcValue = balance * price;
@@ -164,11 +181,6 @@ export function MarketPanel({ state }: { state: GameState }) {
   const sellProceeds = sellAmount * price;
   const sellCUCost = sellAmount * cuCostPerBTC;
   const canSell = sellAmount > 0 && balance >= sellAmount && state.compute_units >= sellCUCost;
-
-  // Max buy (limited by both money and CU)
-  const maxByMoney = price > 0 ? Math.floor(state.money / price) : 0;
-  const maxByCU = cuCostPerBTC > 0 ? Math.floor(state.compute_units / cuCostPerBTC) : 0;
-  const maxBuyable = Math.min(maxByMoney, maxByCU);
 
   async function handleBuy(amount: number) {
     if (amount <= 0) return;
@@ -199,7 +211,9 @@ export function MarketPanel({ state }: { state: GameState }) {
         {/* Price Header */}
         <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex items-center gap-3">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--accent-amber)' }}>Bitcoin Market</h3>
+            <h3 className="text-sm font-semibold" style={{ color: CURRENCY_COLORS.btc.color }}>
+              Bitcoin Market
+            </h3>
             <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
               {btcConfig.step_interval}s updates
             </span>
@@ -209,7 +223,10 @@ export function MarketPanel({ state }: { state: GameState }) {
         {/* Current Price */}
         <div className="panel-card p-3 mb-3 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-2xl font-bold" style={{ color: 'var(--accent-amber)' }}>
+            <span
+              className="font-mono text-2xl font-bold"
+              style={{ color: CURRENCY_COLORS.btc.color }}
+            >
               {formatCurrency(price)}
             </span>
             <span className="font-mono text-sm" style={{ color: directionColor }}>
@@ -224,16 +241,28 @@ export function MarketPanel({ state }: { state: GameState }) {
         {/* Portfolio Summary */}
         <div className="grid grid-cols-3 gap-2 mb-3 shrink-0">
           <div className="panel-card p-2 text-center">
-            <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>Your BTC</div>
-            <div className="stat-value text-sm" style={{ color: 'var(--accent-amber)' }}>{balance}</div>
+            <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              Your BTC
+            </div>
+            <div className="stat-value text-sm" style={{ color: CURRENCY_COLORS.btc.color }}>
+              {balance}
+            </div>
           </div>
           <div className="panel-card p-2 text-center">
-            <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>BTC Value</div>
-            <div className="stat-value text-sm" style={{ color: 'var(--accent-amber)' }}>{formatCurrency(btcValue)}</div>
+            <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              BTC Value
+            </div>
+            <div className="stat-value text-sm" style={{ color: CURRENCY_COLORS.money.color }}>
+              {formatCurrency(btcValue)}
+            </div>
           </div>
           <div className="panel-card p-2 text-center">
-            <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>Portfolio</div>
-            <div className="stat-value text-sm" style={{ color: 'var(--accent-green)' }}>{formatCurrency(totalPortfolio)}</div>
+            <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              Portfolio
+            </div>
+            <div className="stat-value text-sm" style={{ color: CURRENCY_COLORS.money.color }}>
+              {formatCurrency(totalPortfolio)}
+            </div>
           </div>
         </div>
 
@@ -242,19 +271,32 @@ export function MarketPanel({ state }: { state: GameState }) {
           <div className="font-mono text-xs mb-1 shrink-0" style={{ color: 'var(--text-muted)' }}>
             Price History ({history.length} points)
           </div>
-          <PriceChart history={history} minPrice={btcConfig.min_price} maxPrice={btcConfig.max_price} />
+          <PriceChart
+            history={history}
+            minPrice={btcConfig.min_price}
+            maxPrice={btcConfig.max_price}
+          />
         </div>
       </div>
 
       {/* Right: Buy/Sell Controls */}
       <div className="w-72 shrink-0 panel p-4 flex flex-col min-h-0">
-        <h3 className="text-sm font-semibold mb-3 shrink-0" style={{ color: 'var(--accent-amber)' }}>Trade</h3>
+        <h3
+          className="text-sm font-semibold mb-3 shrink-0"
+          style={{ color: CURRENCY_COLORS.btc.color }}
+        >
+          Trade
+        </h3>
 
         {/* Error Display */}
         {displayError && (
           <div
             className="mb-3 px-3 py-2 rounded text-xs font-mono shrink-0"
-            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
+            style={{
+              background: 'rgba(239,68,68,0.1)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              color: '#fca5a5',
+            }}
           >
             {displayError}
           </div>
@@ -262,13 +304,18 @@ export function MarketPanel({ state }: { state: GameState }) {
 
         {/* Buy Section */}
         <div className="mb-4 shrink-0">
-          <div className="font-mono text-xs mb-2 uppercase tracking-wide" style={{ color: 'var(--accent-green)' }}>Buy</div>
+          <div
+            className="font-mono text-xs mb-2 uppercase tracking-wide"
+            style={{ color: 'var(--accent-green)' }}
+          >
+            Buy
+          </div>
           <div className="flex gap-2 mb-2">
             <input
               type="number"
               min={1}
               value={buyAmount}
-              onChange={e => setBuyAmount(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) => setBuyAmount(Math.max(1, parseInt(e.target.value) || 1))}
               className="flex-1 px-3 py-1.5 rounded font-mono text-sm"
               style={{
                 background: 'var(--bg-card)',
@@ -277,33 +324,56 @@ export function MarketPanel({ state }: { state: GameState }) {
                 outline: 'none',
               }}
             />
-            <span className="font-mono text-xs self-center" style={{ color: 'var(--text-muted)' }}>BTC</span>
+            <span className="font-mono text-xs self-center" style={{ color: 'var(--text-muted)' }}>
+              BTC
+            </span>
           </div>
-          <div className="font-mono text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+          <div className="font-mono text-xs mb-1" style={{ color: CURRENCY_COLORS.money.color }}>
             Cost: {formatCurrency(buyCost)}
           </div>
-          <div className="font-mono text-xs mb-2" style={{ color: state.compute_units >= buyCUCost ? 'var(--text-secondary)' : 'var(--accent-red)' }}>
+          <div
+            className="font-mono text-xs mb-2"
+            style={{
+              color:
+                state.compute_units >= buyCUCost ? CURRENCY_COLORS.cu.color : 'var(--accent-red)',
+            }}
+          >
             CU Cost: {buyCUCost.toLocaleString()}
           </div>
           <div className="flex gap-1 mb-2">
             <button
               onClick={() => setBuyAmount(1)}
               className="btn px-2 py-1 text-xs"
-              style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--accent-green)', border: '1px solid rgba(34,197,94,0.2)' }}
+              style={{
+                background: 'rgba(34,197,94,0.1)',
+                color: 'var(--accent-green)',
+                border: '1px solid rgba(34,197,94,0.2)',
+              }}
             >
               1
             </button>
             <button
               onClick={() => setBuyAmount(10)}
               className="btn px-2 py-1 text-xs"
-              style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--accent-green)', border: '1px solid rgba(34,197,94,0.2)' }}
+              style={{
+                background: 'rgba(34,197,94,0.1)',
+                color: 'var(--accent-green)',
+                border: '1px solid rgba(34,197,94,0.2)',
+              }}
             >
               10
             </button>
             <button
-              onClick={() => { setTradeError(null); buyMaxBitcoin().catch(e => setTradeError((e as Error).message)); }}
+              onClick={() => {
+                setTradeError(null);
+                buyMaxBitcoin().catch((e) => setTradeError((e as Error).message));
+              }}
               className="btn px-2 py-1 text-xs"
-              style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--accent-green)', border: '1px solid rgba(34,197,94,0.2)' }}
+              style={{
+                background: 'rgba(34,197,94,0.1)',
+                color: 'var(--accent-green)',
+                border: '1px solid rgba(34,197,94,0.2)',
+              }}
             >
               Max
             </button>
@@ -327,13 +397,18 @@ export function MarketPanel({ state }: { state: GameState }) {
 
         {/* Sell Section */}
         <div className="mb-4 shrink-0">
-          <div className="font-mono text-xs mb-2 uppercase tracking-wide" style={{ color: 'var(--accent-red)' }}>Sell</div>
+          <div
+            className="font-mono text-xs mb-2 uppercase tracking-wide"
+            style={{ color: 'var(--accent-red)' }}
+          >
+            Sell
+          </div>
           <div className="flex gap-2 mb-2">
             <input
               type="number"
               min={1}
               value={sellAmount}
-              onChange={e => setSellAmount(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) => setSellAmount(Math.max(1, parseInt(e.target.value) || 1))}
               className="flex-1 px-3 py-1.5 rounded font-mono text-sm"
               style={{
                 background: 'var(--bg-card)',
@@ -342,33 +417,56 @@ export function MarketPanel({ state }: { state: GameState }) {
                 outline: 'none',
               }}
             />
-            <span className="font-mono text-xs self-center" style={{ color: 'var(--text-muted)' }}>BTC</span>
+            <span className="font-mono text-xs self-center" style={{ color: 'var(--text-muted)' }}>
+              BTC
+            </span>
           </div>
-          <div className="font-mono text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+          <div className="font-mono text-xs mb-1" style={{ color: CURRENCY_COLORS.money.color }}>
             Proceeds: {formatCurrency(sellProceeds)}
           </div>
-          <div className="font-mono text-xs mb-2" style={{ color: state.compute_units >= sellCUCost ? 'var(--text-secondary)' : 'var(--accent-red)' }}>
+          <div
+            className="font-mono text-xs mb-2"
+            style={{
+              color:
+                state.compute_units >= sellCUCost ? CURRENCY_COLORS.cu.color : 'var(--accent-red)',
+            }}
+          >
             CU Cost: {sellCUCost.toLocaleString()}
           </div>
           <div className="flex gap-1 mb-2">
             <button
               onClick={() => setSellAmount(1)}
               className="btn px-2 py-1 text-xs"
-              style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.2)' }}
+              style={{
+                background: 'rgba(239,68,68,0.1)',
+                color: 'var(--accent-red)',
+                border: '1px solid rgba(239,68,68,0.2)',
+              }}
             >
               1
             </button>
             <button
               onClick={() => setSellAmount(10)}
               className="btn px-2 py-1 text-xs"
-              style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.2)' }}
+              style={{
+                background: 'rgba(239,68,68,0.1)',
+                color: 'var(--accent-red)',
+                border: '1px solid rgba(239,68,68,0.2)',
+              }}
             >
               10
             </button>
             <button
-              onClick={() => { setTradeError(null); sellAllBitcoin().catch(e => setTradeError((e as Error).message)); }}
+              onClick={() => {
+                setTradeError(null);
+                sellAllBitcoin().catch((e) => setTradeError((e as Error).message));
+              }}
               className="btn px-2 py-1 text-xs"
-              style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.2)' }}
+              style={{
+                background: 'rgba(239,68,68,0.1)',
+                color: 'var(--accent-red)',
+                border: '1px solid rgba(239,68,68,0.2)',
+              }}
             >
               All
             </button>

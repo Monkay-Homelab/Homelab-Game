@@ -125,10 +125,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const s = get().state;
     const cfg = get().config;
     if (s && cfg) {
-      const tierCfg = cfg.tiers.find(t => t.id === s.tier);
+      const tierCfg = cfg.tiers.find((t) => t.id === s.tier);
       const reward = tierCfg?.job_reward || 10;
       const knowledgeBoost = 1 + s.knowledge_points / cfg.gameplay.knowledge_boost_divisor;
-      set({ state: { ...s, compute_units: s.compute_units + Math.floor(reward * knowledgeBoost) } });
+      set({
+        state: { ...s, compute_units: s.compute_units + Math.floor(reward * knowledgeBoost) },
+      });
     }
     try {
       const state = await wsClient.sendAction('run_job');
@@ -201,7 +203,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   upgradeComponent: async (hardwareId, component) => {
     set({ error: null });
     try {
-      const state = await wsClient.sendAction('upgrade_component', { hardware_id: hardwareId, component });
+      const state = await wsClient.sendAction('upgrade_component', {
+        hardware_id: hardwareId,
+        component,
+      });
       set({ state });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -393,10 +398,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   addEvent: (event) => {
-    set(s => ({ events: [...s.events, event].slice(-10) })); // keep last 10
+    set((s) => ({ events: [...s.events, event].slice(-10) })); // keep last 10
   },
 
   dismissEvent: (index) => {
-    set(s => ({ events: s.events.filter((_, i) => i !== index) }));
+    set((s) => ({ events: s.events.filter((_, i) => i !== index) }));
   },
 }));

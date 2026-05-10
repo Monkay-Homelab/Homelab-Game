@@ -91,12 +91,14 @@ class WSClient {
 
       this.pending.set(id, { resolve, reject, timer });
 
-      this.ws!.send(JSON.stringify({
-        type: 'action',
-        id,
-        action,
-        payload,
-      }));
+      this.ws!.send(
+        JSON.stringify({
+          type: 'action',
+          id,
+          action,
+          payload,
+        }),
+      );
     });
   }
 
@@ -123,9 +125,7 @@ class WSClient {
           this.onState?.(msg.payload);
           break;
         case 'event': {
-          const event = typeof msg.payload === 'string'
-            ? JSON.parse(msg.payload)
-            : msg.payload;
+          const event = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
           this.onEvent?.(event as GameEvent);
           break;
         }

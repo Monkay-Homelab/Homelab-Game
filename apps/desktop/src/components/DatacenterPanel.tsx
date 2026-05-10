@@ -1,21 +1,16 @@
 import type { GameState } from '../api';
 import { useGameStore } from '../stores/gameStore';
 import { useConfig } from '../hooks/useConfig';
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return n.toString();
-}
+import { CURRENCY_COLORS, formatNumber } from '../utils/currencyColors';
+import { CurrencyStatLine } from './shared/CurrencyStatLine';
 
 export function DatacenterPanel({ state }: { state: GameState }) {
   const config = useConfig();
   const dc = config.datacenter;
-  const colo = useGameStore(s => s.colo);
-  const buildDatacenter = useGameStore(s => s.buildDatacenter);
-  const upgradeDatacenter = useGameStore(s => s.upgradeDatacenter);
-  const optimizeRack = useGameStore(s => s.optimizeRack);
+  const colo = useGameStore((s) => s.colo);
+  const buildDatacenter = useGameStore((s) => s.buildDatacenter);
+  const upgradeDatacenter = useGameStore((s) => s.upgradeDatacenter);
+  const optimizeRack = useGameStore((s) => s.optimizeRack);
   const coloRacks = state.colo_racks || [];
   const maxTier = config.tiers[config.tiers.length - 1];
   const canColo = state.tier === maxTier.id && state.saas_unlocked;
@@ -36,13 +31,15 @@ export function DatacenterPanel({ state }: { state: GameState }) {
   const canAffordOptimize = state.compute_units >= optCost && optCost !== Infinity;
 
   // Snapshot preview: what the colo rack income would look like with current optimization
-  const snapshotCompute = (state.hardware || []).reduce((sum, h) => {
-    let compute = h.compute_per_tick;
-    for (const cu of (state.component_upgrades || [])) {
-      if (cu.hardware_id === h.id) compute += Math.floor(h.compute_per_tick * cu.compute_bonus / 100);
-    }
-    return sum + compute;
-  }, 0) + (state.services || []).reduce((sum, s) => sum + s.compute_per_tick, 0);
+  const snapshotCompute =
+    (state.hardware || []).reduce((sum, h) => {
+      let compute = h.compute_per_tick;
+      for (const cu of state.component_upgrades || []) {
+        if (cu.hardware_id === h.id)
+          compute += Math.floor((h.compute_per_tick * cu.compute_bonus) / 100);
+      }
+      return sum + compute;
+    }, 0) + (state.services || []).reduce((sum, s) => sum + s.compute_per_tick, 0);
   const snapshotRep = (state.services || []).reduce((sum, s) => sum + s.reputation_per_tick, 0);
   const snapshotMoney = (state.services || []).reduce((sum, s) => sum + s.money_per_tick, 0);
 
@@ -55,21 +52,37 @@ export function DatacenterPanel({ state }: { state: GameState }) {
     <div className="h-full flex gap-4 min-h-0">
       {/* Actions */}
       <div className="w-80 shrink-0 panel p-4 flex flex-col min-h-0">
-        <h3 className="text-sm font-semibold mb-3 shrink-0" style={{ color: 'var(--accent-cyan)' }}>Actions</h3>
+        <h3 className="text-sm font-semibold mb-3 shrink-0" style={{ color: 'var(--accent-cyan)' }}>
+          Actions
+        </h3>
 
         {state.owns_datacenter && (
           <div className="panel-card p-3 mb-3" style={{ borderColor: 'rgba(6,182,212,0.3)' }}>
             <div className="font-medium text-sm" style={{ color: 'var(--accent-cyan)' }}>
-              Your Datacenter — {dc.level_names[state.datacenter_level] || `Level ${state.datacenter_level}`}
+              Your Datacenter —{' '}
+              {dc.level_names[state.datacenter_level] || `Level ${state.datacenter_level}`}
             </div>
-            <div className="font-mono text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{dcMult.toFixed(2)}x income on colo racks</div>
+            <div className="font-mono text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+              {dcMult.toFixed(2)}x income on colo racks
+            </div>
             {state.datacenter_level < dc.max_level && (
               <button
                 onClick={upgradeDatacenter}
                 className="btn w-full mt-2 py-1.5 text-xs"
-                style={{ background: 'rgba(6,182,212,0.1)', color: 'var(--accent-cyan)', border: '1px solid rgba(6,182,212,0.2)' }}
+                style={{
+                  background: 'rgba(6,182,212,0.1)',
+                  color: 'var(--accent-cyan)',
+                  border: '1px solid rgba(6,182,212,0.2)',
+                }}
               >
-                Upgrade — ${(dc.upgrade_money_base * (state.datacenter_level + 1)).toLocaleString()} + {(dc.upgrade_compute_base * (state.datacenter_level + 1)).toLocaleString()} CU
+                Upgrade —{' '}
+                <span style={{ color: CURRENCY_COLORS.money.color }}>
+                  ${(dc.upgrade_money_base * (state.datacenter_level + 1)).toLocaleString()}
+                </span>{' '}
+                +{' '}
+                <span style={{ color: CURRENCY_COLORS.cu.color }}>
+                  {(dc.upgrade_compute_base * (state.datacenter_level + 1)).toLocaleString()} CU
+                </span>
               </button>
             )}
           </div>
@@ -89,9 +102,9 @@ export function DatacenterPanel({ state }: { state: GameState }) {
                 disabled={!canAffordOptimize}
                 className="btn w-full mt-2 py-1.5 text-xs"
                 style={{
-                  background: canAffordOptimize ? 'rgba(6,182,212,0.1)' : 'rgba(6,182,212,0.05)',
-                  color: canAffordOptimize ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                  border: '1px solid rgba(6,182,212,0.2)',
+                  background: canAffordOptimize ? CURRENCY_COLORS.cu.bg : 'var(--bg-card)',
+                  color: canAffordOptimize ? CURRENCY_COLORS.cu.color : 'var(--text-muted)',
+                  border: `1px solid ${canAffordOptimize ? CURRENCY_COLORS.cu.border : 'var(--border)'}`,
                 }}
               >
                 Optimize Rack — {formatNumber(optCost)} CU
@@ -101,10 +114,34 @@ export function DatacenterPanel({ state }: { state: GameState }) {
               <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
                 Colo rack preview with bonus:
               </div>
-              <div className="font-mono text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                +{formatNumber(previewCompute)} CU · +{formatNumber(previewRep)} Rep · +${formatNumber(previewMoney)}/tick
+              <div className="font-mono text-xs mt-0.5">
+                <CurrencyStatLine
+                  items={[
+                    {
+                      currency: 'cu',
+                      value: `${formatNumber(previewCompute)}`,
+                      prefix: '+',
+                      suffix: ' CU',
+                    },
+                    {
+                      currency: 'rep',
+                      value: `${formatNumber(previewRep)}`,
+                      prefix: '+',
+                      suffix: ' Rep',
+                    },
+                    {
+                      currency: 'money',
+                      value: `${formatNumber(previewMoney)}`,
+                      prefix: '+$',
+                      suffix: '/tick',
+                    },
+                  ]}
+                />
               </div>
-              <div className="font-mono text-xs mt-0.5 italic" style={{ color: 'var(--text-muted)' }}>
+              <div
+                className="font-mono text-xs mt-0.5 italic"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Preview is approximate — server is authoritative
               </div>
             </div>
@@ -116,7 +153,11 @@ export function DatacenterPanel({ state }: { state: GameState }) {
             <button
               onClick={colo}
               className="btn w-full py-3 text-sm"
-              style={{ background: 'rgba(6,182,212,0.1)', color: 'var(--accent-cyan)', border: '1px solid rgba(6,182,212,0.3)' }}
+              style={{
+                background: 'rgba(6,182,212,0.1)',
+                color: 'var(--accent-cyan)',
+                border: '1px solid rgba(6,182,212,0.3)',
+              }}
             >
               Colocate Rack (Prestige)
             </button>
@@ -126,7 +167,11 @@ export function DatacenterPanel({ state }: { state: GameState }) {
             <button
               onClick={buildDatacenter}
               className="btn w-full py-3 text-sm"
-              style={{ background: 'rgba(245,158,11,0.1)', color: 'var(--accent-amber)', border: '1px solid rgba(245,158,11,0.3)' }}
+              style={{
+                background: CURRENCY_COLORS.cu.bg,
+                color: CURRENCY_COLORS.cu.color,
+                border: `1px solid ${CURRENCY_COLORS.cu.border}`,
+              }}
             >
               Build Datacenter — ${buildMoneyStr} + {buildComputeStr} CU
             </button>
@@ -135,7 +180,8 @@ export function DatacenterPanel({ state }: { state: GameState }) {
           {!canColo && (
             <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
               {state.tier !== maxTier.id ? `Reach ${maxTier.label} to colo` : 'Unlock SaaS to colo'}
-              {state.colo_count < dc.min_colo_count && `. ${dc.min_colo_count - state.colo_count} more colos for datacenter.`}
+              {state.colo_count < dc.min_colo_count &&
+                `. ${dc.min_colo_count - state.colo_count} more colos for datacenter.`}
             </p>
           )}
         </div>
@@ -144,25 +190,53 @@ export function DatacenterPanel({ state }: { state: GameState }) {
       {/* Colo'd Racks */}
       <div className="flex-1 panel p-4 flex flex-col min-h-0">
         <div className="flex justify-between items-center mb-3 shrink-0">
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--accent-cyan)' }}>Colo'd Racks</h3>
-          <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{state.colo_multiplier.toFixed(2)}x mult</span>
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--accent-cyan)' }}>
+            Colo'd Racks
+          </h3>
+          <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+            {state.colo_multiplier.toFixed(2)}x mult
+          </span>
         </div>
         {coloRacks.length > 0 && (
-          <div className="font-mono text-xs mb-3 shrink-0" style={{ color: 'var(--text-secondary)' }}>
-            +{totalColoCompute} CU · +{totalColoRep} Rep · +${totalColoMoney}/tick passive
+          <div className="font-mono text-xs mb-3 shrink-0">
+            <CurrencyStatLine
+              items={[
+                { currency: 'cu', value: totalColoCompute, prefix: '+', suffix: ' CU' },
+                { currency: 'rep', value: totalColoRep, prefix: '+', suffix: ' Rep' },
+                { currency: 'money', value: totalColoMoney, prefix: '+$', suffix: '/tick' },
+              ]}
+            />
+            <span style={{ color: 'var(--text-secondary)' }}> passive</span>
           </div>
         )}
         <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
-          {coloRacks.length > 0 ? coloRacks.map(r => (
-            <div key={r.id} className="panel-card p-3">
-              <div className="font-medium text-sm">{r.rack_size}U Rack</div>
-              <div className="font-mono text-xs mt-0.5" style={{ color: 'var(--accent-cyan)' }}>{dc.tier_names[r.datacenter_tier] || `Tier ${r.datacenter_tier}`}</div>
-              <div className="font-mono text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                +{r.compute_per_tick} CU · +{r.reputation_per_tick} Rep · +${r.money_per_tick}/tick
+          {coloRacks.length > 0 ? (
+            coloRacks.map((r) => (
+              <div key={r.id} className="panel-card p-3">
+                <div className="font-medium text-sm">{r.rack_size}U Rack</div>
+                <div className="font-mono text-xs mt-0.5" style={{ color: 'var(--accent-cyan)' }}>
+                  {dc.tier_names[r.datacenter_tier] || `Tier ${r.datacenter_tier}`}
+                </div>
+                <div className="font-mono text-xs mt-0.5">
+                  <CurrencyStatLine
+                    items={[
+                      { currency: 'cu', value: r.compute_per_tick, prefix: '+', suffix: ' CU' },
+                      {
+                        currency: 'rep',
+                        value: r.reputation_per_tick,
+                        prefix: '+',
+                        suffix: ' Rep',
+                      },
+                      { currency: 'money', value: r.money_per_tick, prefix: '+$', suffix: '/tick' },
+                    ]}
+                  />
+                </div>
               </div>
-            </div>
-          )) : (
-            <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>No racks colocated yet</p>
+            ))
+          ) : (
+            <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              No racks colocated yet
+            </p>
           )}
         </div>
       </div>

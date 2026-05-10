@@ -7,6 +7,6 @@ export default defineConfig({
   server: {
     port: 3000,
     host: '0.0.0.0',
-    allowedHosts: ['game.homelab.living'],
+    allowedHosts: ['game.homelab.living', 'dev-game.homelab.living'],
   },
 });

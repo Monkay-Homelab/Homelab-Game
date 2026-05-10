@@ -3,7 +3,7 @@ import { useGameStore } from '../stores/gameStore';
 import { wsClient } from '../wsClient';
 
 export function useWebSocket() {
-  const token = useGameStore(s => s.token);
+  const token = useGameStore((s) => s.token);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mountedRef = useRef(true);
 

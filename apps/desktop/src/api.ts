@@ -202,7 +202,13 @@ export interface ServiceTemplate {
 }
 
 export interface GroupInfo {
-  group: { id: string; name: string; founder_id: string; min_contribution: number; profit_split: number } | null;
+  group: {
+    id: string;
+    name: string;
+    founder_id: string;
+    min_contribution: number;
+    profit_split: number;
+  } | null;
   members: { group_id: string; user_id: string; role: string; display_name: string }[];
   my_role: string;
   compute_pool: number;
@@ -210,7 +216,14 @@ export interface GroupInfo {
 
 export interface LeaderboardData {
   category: string;
-  entries: { id: string; user_id: string; username: string; category: string; score: number; rank: number }[];
+  entries: {
+    id: string;
+    user_id: string;
+    username: string;
+    category: string;
+    score: number;
+    rank: number;
+  }[];
 }
 
 export interface GameConfig {
@@ -361,12 +374,29 @@ export const api = {
   // Social
   getMyGroup: () => request<GroupInfo>('/api/social/group'),
   listGroups: () => request<{ groups: GroupInfo['group'][] }>('/api/social/groups'),
-  createGroup: (name: string) => request<GroupInfo>('/api/social/group/create', { method: 'POST', body: JSON.stringify({ name }) }),
-  joinGroup: (name: string) => request<GroupInfo>('/api/social/group/join', { method: 'POST', body: JSON.stringify({ name }) }),
+  createGroup: (name: string) =>
+    request<GroupInfo>('/api/social/group/create', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  joinGroup: (name: string) =>
+    request<GroupInfo>('/api/social/group/join', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   leaveGroup: () => request<{ ok: boolean }>('/api/social/group/leave', { method: 'POST' }),
-  promoteMember: (userId: string) => request<{ members: GroupInfo['members'] }>('/api/social/group/promote', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
-  kickMember: (userId: string) => request<{ members: GroupInfo['members'] }>('/api/social/group/kick', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
+  promoteMember: (userId: string) =>
+    request<{ members: GroupInfo['members'] }>('/api/social/group/promote', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+  kickMember: (userId: string) =>
+    request<{ members: GroupInfo['members'] }>('/api/social/group/kick', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
   getLeaderboard: (category: string) =>
     request<LeaderboardData>(`/api/social/leaderboard?category=${encodeURIComponent(category)}`),
-  updateLeaderboard: () => request<{ ok: boolean }>('/api/social/leaderboard/update', { method: 'POST' }),
+  updateLeaderboard: () =>
+    request<{ ok: boolean }>('/api/social/leaderboard/update', { method: 'POST' }),
 };

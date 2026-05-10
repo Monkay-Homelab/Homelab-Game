@@ -4,7 +4,7 @@ import { useConfig, getTier } from '../hooks/useConfig';
 
 export function ClickArea({ tier }: { tier: string }) {
   const config = useConfig();
-  const runJob = useGameStore(s => s.runJob);
+  const runJob = useGameStore((s) => s.runJob);
   const [lastJob, setLastJob] = useState('Ready');
   const [clickCount, setClickCount] = useState(0);
   const [isActive, setIsActive] = useState(false);
@@ -14,7 +14,7 @@ export function ClickArea({ tier }: { tier: string }) {
     const tierCfg = getTier(config, tier);
     const jobs = tierCfg?.jobs || ['Running job...'];
     setLastJob(jobs[Math.floor(Math.random() * jobs.length)]);
-    setClickCount(c => c + 1);
+    setClickCount((c) => c + 1);
     setIsActive(true);
     setTimeout(() => setIsActive(false), 100);
   };
@@ -35,8 +35,12 @@ export function ClickArea({ tier }: { tier: string }) {
         Run Job
       </button>
       <div className="mt-3 w-full flex justify-between items-center">
-        <span className="font-mono text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{lastJob}</span>
-        <span className="font-mono text-xs shrink-0 ml-2" style={{ color: 'var(--text-muted)' }}>#{clickCount}</span>
+        <span className="font-mono text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+          {lastJob}
+        </span>
+        <span className="font-mono text-xs shrink-0 ml-2" style={{ color: 'var(--text-muted)' }}>
+          #{clickCount}
+        </span>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useGameStore, type GameEvent } from '../stores/gameStore';
 
 const severityStyles: Record<string, { border: string; bg: string }> = {
@@ -7,8 +8,8 @@ const severityStyles: Record<string, { border: string; bg: string }> = {
 };
 
 export function EventLog() {
-  const events = useGameStore(s => s.events);
-  const dismissEvent = useGameStore(s => s.dismissEvent);
+  const events = useGameStore((s) => s.events);
+  const dismissEvent = useGameStore((s) => s.dismissEvent);
 
   if (events.length === 0) return null;
 
@@ -22,10 +23,16 @@ export function EventLog() {
 }
 
 function EventCard({ event, onDismiss }: { event: GameEvent; onDismiss: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 5000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const mitigated = event.description.includes('(Mitigated!)');
   const style = mitigated
     ? { border: 'rgba(34,197,94,0.4)', bg: 'rgba(34,197,94,0.08)' }
-    : (severityStyles[event.severity] || severityStyles.minor);
+    : severityStyles[event.severity] || severityStyles.minor;
 
   return (
     <div
@@ -40,9 +47,17 @@ function EventCard({ event, onDismiss }: { event: GameEvent; onDismiss: () => vo
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{event.name}</div>
-          <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{event.description}</p>
+          <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            {event.description}
+          </p>
         </div>
-        <span className="font-mono text-xs shrink-0 px-1.5 py-0.5 rounded" style={{ background: style.bg, color: mitigated ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+        <span
+          className="font-mono text-xs shrink-0 px-1.5 py-0.5 rounded"
+          style={{
+            background: style.bg,
+            color: mitigated ? 'var(--accent-green)' : 'var(--text-secondary)',
+          }}
+        >
           {mitigated ? 'OK' : event.severity.toUpperCase()}
         </span>
       </div>

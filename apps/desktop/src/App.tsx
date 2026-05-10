@@ -17,7 +17,15 @@ import { EventLog } from './components/EventLog';
 import { OverclockPanel } from './components/OverclockPanel';
 import { useWebSocket } from './hooks/useWebSocket';
 
-type Tab = 'hardware' | 'services' | 'upgrades' | 'research' | 'saas' | 'datacenter' | 'social' | 'market';
+type Tab =
+  | 'hardware'
+  | 'services'
+  | 'upgrades'
+  | 'research'
+  | 'saas'
+  | 'datacenter'
+  | 'social'
+  | 'market';
 
 const TABS: { id: Tab; label: string; icon: string; color: string }[] = [
   { id: 'hardware', label: 'Hardware', icon: '[ ]', color: 'var(--accent-purple)' },
@@ -50,7 +58,10 @@ export function App() {
   if (!token) return <Login />;
   if (!state || !config) {
     return (
-      <div className="h-screen flex items-center justify-center" style={{ background: 'var(--bg-deep)' }}>
+      <div
+        className="h-screen flex items-center justify-center"
+        style={{ background: 'var(--bg-deep)' }}
+      >
         <div className="text-center">
           <div className="font-mono text-sm" style={{ color: 'var(--accent-green)' }}>
             Initializing systems...
@@ -61,11 +72,20 @@ export function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: 'var(--bg-deep)' }}>
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ background: 'var(--bg-deep)' }}
+    >
       {/* Top Bar */}
-      <header className="shrink-0 flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+      <header
+        className="shrink-0 flex items-center justify-between px-5 py-3"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
         <div className="flex items-center gap-3">
-          <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-card)', color: 'var(--accent-green)' }}>
+          <span
+            className="font-mono text-xs px-2 py-1 rounded"
+            style={{ background: 'var(--bg-card)', color: 'var(--accent-green)' }}
+          >
             HLG
           </span>
           <h1 className="text-lg font-semibold tracking-tight">Homelab the Game</h1>
@@ -80,7 +100,14 @@ export function App() {
       </header>
 
       {error && (
-        <div className="mx-5 mt-3 px-4 py-2 rounded text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+        <div
+          className="mx-5 mt-3 px-4 py-2 rounded text-sm"
+          style={{
+            background: 'rgba(239,68,68,0.1)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            color: '#fca5a5',
+          }}
+        >
           {error}
         </div>
       )}
@@ -95,7 +122,11 @@ export function App() {
         {/* Left Sidebar — Click + Progress + Datacenter */}
         <div className="w-72 shrink-0 flex flex-col gap-3 min-h-0">
           <ClickArea tier={state.tier} />
-          <TierProgress tier={state.tier} computeUnits={state.compute_units} coloCount={state.colo_count} />
+          <TierProgress
+            tier={state.tier}
+            computeUnits={state.compute_units}
+            coloCount={state.colo_count}
+          />
           <DonatePanel state={state} />
           <OverclockPanel state={state} />
         </div>
@@ -104,7 +135,9 @@ export function App() {
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Tab Bar */}
           <div className="shrink-0 flex gap-1 mb-3">
-            {TABS.filter(tab => tab.id !== 'market' || state.money > 0 || state.bitcoin_balance > 0).map(tab => {
+            {TABS.filter(
+              (tab) => tab.id !== 'market' || state.money > 0 || state.bitcoin_balance > 0,
+            ).map((tab) => {
               const isActive = activeTab === tab.id;
               return (
                 <button

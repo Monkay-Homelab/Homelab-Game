@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { GameState } from '../api';
 import { useGameStore } from '../stores/gameStore';
 import { useConfig } from '../hooks/useConfig';
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return n.toString();
-}
+import { CURRENCY_COLORS, formatNumber } from '../utils/currencyColors';
 
 function formatTime(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
@@ -17,45 +12,63 @@ function formatTime(totalSeconds: number): string {
 
 export function OverclockPanel({ state }: { state: GameState }) {
   const config = useConfig();
-  const activateOverclock = useGameStore(s => s.activateOverclock);
+  const activateOverclock = useGameStore((s) => s.activateOverclock);
   const overclockConfig = config.overclock;
   const tickInterval = overclockConfig.tick_interval_seconds;
 
-  // Client-side countdown timer that interpolates between server pushes
-  const [displaySeconds, setDisplaySeconds] = useState(0);
-  const lastSyncTime = useRef(Date.now());
+  // Client-side countdown timer that interpolates between server pushes.
+  // displaySeconds is the interpolated countdown shown in the UI. It is
+  // derived from server ticks (synced via refs) and a 250ms interval that
+  // subtracts elapsed wall-clock time.
+  const lastSyncTime = useRef(0);
   const lastSyncTicks = useRef(state.overclock_ticks_remaining);
+  const [countdown, setCountdown] = useState(state.overclock_ticks_remaining * tickInterval);
 
-  // Update sync reference when server state changes
+  // Sync refs when server state changes (effect avoids impure render calls)
   useEffect(() => {
     lastSyncTime.current = Date.now();
     lastSyncTicks.current = state.overclock_ticks_remaining;
-    setDisplaySeconds(state.overclock_ticks_remaining * tickInterval);
-  }, [state.overclock_ticks_remaining, tickInterval]);
+  }, [state.overclock_ticks_remaining]);
+
+  // Derive the display value: use the interval-driven countdown when
+  // active, otherwise compute directly from props (no effect needed).
+  const displaySeconds = state.overclocked
+    ? countdown
+    : state.overclock_ticks_remaining * tickInterval;
 
   // Client-side countdown interpolation
   useEffect(() => {
     if (!state.overclocked) return;
 
+    // Seed initial countdown value synchronously via ref reset
+    lastSyncTime.current = Date.now();
+    lastSyncTicks.current = state.overclock_ticks_remaining;
+
     const interval = setInterval(() => {
       const elapsedMs = Date.now() - lastSyncTime.current;
       const remainingSec = lastSyncTicks.current * tickInterval - elapsedMs / 1000;
-      setDisplaySeconds(Math.max(0, remainingSec));
+      setCountdown(Math.max(0, remainingSec));
     }, 250);
 
     return () => clearInterval(interval);
-  }, [state.overclocked, tickInterval]);
+  }, [state.overclocked, tickInterval, state.overclock_ticks_remaining]);
 
   const isActive = state.overclocked && state.overclock_ticks_remaining > 0;
 
   return (
     <div className="panel p-4">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Overclock</span>
+        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+          Overclock
+        </span>
         {isActive && (
           <span
             className="font-mono text-xs px-2 py-0.5 rounded animate-gentle-pulse"
-            style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--accent-amber)', border: '1px solid rgba(245,158,11,0.3)' }}
+            style={{
+              background: CURRENCY_COLORS.cu.bg,
+              color: CURRENCY_COLORS.cu.color,
+              border: `1px solid ${CURRENCY_COLORS.cu.border}`,
+            }}
           >
             {state.overclock_multiplier}x ACTIVE
           </span>
@@ -64,9 +77,15 @@ export function OverclockPanel({ state }: { state: GameState }) {
 
       {/* Active overclock countdown */}
       {isActive && (
-        <div className="mb-3 p-2 rounded" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
+        <div
+          className="mb-3 p-2 rounded"
+          style={{
+            background: CURRENCY_COLORS.cu.bg,
+            border: `1px solid ${CURRENCY_COLORS.cu.border}`,
+          }}
+        >
           <div className="flex justify-between items-center">
-            <span className="font-mono text-xs" style={{ color: 'var(--accent-amber)' }}>
+            <span className="font-mono text-xs" style={{ color: CURRENCY_COLORS.cu.color }}>
               {state.overclock_multiplier}x OVERCLOCK
             </span>
             <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -74,13 +93,18 @@ export function OverclockPanel({ state }: { state: GameState }) {
             </span>
           </div>
           {/* Progress bar */}
-          <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-card)' }}>
+          <div
+            className="mt-1.5 h-1 rounded-full overflow-hidden"
+            style={{ background: 'var(--bg-card)' }}
+          >
             <div
               className="h-full rounded-full transition-all"
               style={{
-                background: 'var(--accent-amber)',
+                background: CURRENCY_COLORS.cu.color,
                 width: `${(() => {
-                  const tierCfg = overclockConfig.tiers.find(t => t.multiplier === state.overclock_multiplier);
+                  const tierCfg = overclockConfig.tiers.find(
+                    (t) => t.multiplier === state.overclock_multiplier,
+                  );
                   const totalDuration = (tierCfg?.duration || 60) * tickInterval;
                   return Math.max(0, (displaySeconds / totalDuration) * 100);
                 })()}%`,
@@ -92,12 +116,13 @@ export function OverclockPanel({ state }: { state: GameState }) {
 
       {/* Tier buttons */}
       <div className="space-y-1.5">
-        {overclockConfig.tiers.map(tier => {
+        {overclockConfig.tiers.map((tier) => {
           const canAfford = state.compute_units >= tier.cost;
           const duration = tier.duration * tickInterval;
 
           // Heat warning: estimate if overclock would push heat above cooling
-          const estimatedHeat = state.heat_generated + state.heat_generated * (tier.multiplier - 1) * tier.heat_factor;
+          const estimatedHeat =
+            state.heat_generated + state.heat_generated * (tier.multiplier - 1) * tier.heat_factor;
           const wouldOverheat = estimatedHeat > state.cooling_capacity && !state.overheating;
 
           return (
@@ -106,7 +131,10 @@ export function OverclockPanel({ state }: { state: GameState }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sm">{tier.label}</span>
-                    <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(245,158,11,0.1)', color: 'var(--accent-amber)' }}>
+                    <span
+                      className="font-mono text-xs px-1.5 py-0.5 rounded"
+                      style={{ background: CURRENCY_COLORS.cu.bg, color: CURRENCY_COLORS.cu.color }}
+                    >
                       {formatTime(duration)}
                     </span>
                   </div>
@@ -121,9 +149,9 @@ export function OverclockPanel({ state }: { state: GameState }) {
                   disabled={!canAfford}
                   className="btn px-3 py-1.5 text-xs shrink-0 ml-2"
                   style={{
-                    background: canAfford ? 'rgba(245,158,11,0.1)' : 'var(--bg-card)',
-                    color: canAfford ? 'var(--accent-amber)' : 'var(--text-muted)',
-                    border: `1px solid ${canAfford ? 'rgba(245,158,11,0.2)' : 'var(--border)'}`,
+                    background: canAfford ? CURRENCY_COLORS.cu.bg : 'var(--bg-card)',
+                    color: canAfford ? CURRENCY_COLORS.cu.color : 'var(--text-muted)',
+                    border: `1px solid ${canAfford ? CURRENCY_COLORS.cu.border : 'var(--border)'}`,
                   }}
                 >
                   {formatNumber(tier.cost)} CU
