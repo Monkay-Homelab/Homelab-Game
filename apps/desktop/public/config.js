@@ -1,1 +1,1 @@
-window.__APP_CONFIG__ = { API_URL: 'https://dev-api.homelab.living' };
+window.__APP_CONFIG__ = { API_URL: 'https://dev-api.homelab.living', API_URL_MAP: '' };
