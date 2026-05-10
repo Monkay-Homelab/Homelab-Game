@@ -45,12 +45,3 @@ for f in /migrations/[0-9]*.sql; do
 done
 
 echo "All migrations applied."
-
-# Stay alive so the orchestrator can use a healthcheck rather than exit code.
-# Compose's `condition: service_completed_successfully` makes the container
-# disappear after exit, which interacts badly with `docker compose up` (any
-# clean exit aborts the foreground stack). Idle here instead and signal
-# completion via a marker file the healthcheck reads.
-touch /tmp/migrations-done
-echo "Migrations container idle; healthcheck reads /tmp/migrations-done."
-exec sleep infinity

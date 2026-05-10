@@ -17,13 +17,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/migrations-done"]
-      interval: 10s
-      timeout: 3s
-      start_period: 60s
-      retries: 5
-    restart: unless-stopped
+    restart: "no"
 
   backend:
     image: ghcr.io/monkay-homelab/homelab-game-backend:latest
@@ -50,7 +44,7 @@ services:
       redis:
         condition: service_healthy
       migrations:
-        condition: service_healthy
+        condition: service_completed_successfully
     restart: unless-stopped
 
   frontend:
