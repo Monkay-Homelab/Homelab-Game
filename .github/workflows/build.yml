@@ -25,6 +25,13 @@ jobs:
         with:
           go-version-file: apps/backend/go.mod
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          working-directory: apps/backend
+          args: --timeout=5m
+
       - name: Test
         working-directory: apps/backend
         run: go test ./...
@@ -106,6 +113,18 @@ jobs:
       - name: Typecheck shared
         working-directory: packages/shared
         run: pnpm typecheck
+
+      - name: Lint (ESLint)
+        working-directory: apps/desktop
+        run: pnpm lint
+
+      - name: Format check (Prettier)
+        working-directory: apps/desktop
+        run: pnpm format:check
+
+      - name: Build desktop
+        working-directory: apps/desktop
+        run: pnpm build
 
       - name: Set up Docker Buildx
         if: github.event_name == 'push'

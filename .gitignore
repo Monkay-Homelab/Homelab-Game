@@ -25,6 +25,8 @@ Thumbs.db
 
 # Compiled binaries
 apps/stress-tests/stresstest
+apps/backend/healthcheck
 
 # Claude
 _temp*/
+.claude/

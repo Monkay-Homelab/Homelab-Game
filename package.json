@@ -2,5 +2,22 @@
   "name": "homelab-the-game",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.32.1"
+  "packageManager": "pnpm@10.32.1",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
+  },
+  "scripts": {
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "apps/desktop/src/**/*.{ts,tsx}": [
+      "bash -c 'cd apps/desktop && pnpm exec eslint --fix \"$@\"' _",
+      "bash -c 'cd apps/desktop && pnpm exec prettier --write \"$@\"' _"
+    ],
+    "apps/desktop/src/**/*.{css,json}": [
+      "bash -c 'cd apps/desktop && pnpm exec prettier --write \"$@\"' _"
+    ],
+    "apps/backend/**/*.go": ["bash -c 'cd apps/backend && golangci-lint run --fix' _"]
+  }
 }

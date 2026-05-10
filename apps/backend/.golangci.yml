@@ -1,0 +1,90 @@
+# golangci-lint v2 configuration for Homelab the Game backend.
+#
+# Linter philosophy: catch real bugs and enforce baseline quality without
+# blocking development. Overly opinionated style linters are intentionally
+# excluded at this project maturity level.
+#
+# Violation counts at adoption (2026-04-04) -- tracked for cleanup in Task #50:
+#   errcheck: 69, unconvert: 10, gosec: 2, gocritic: 1, staticcheck: 1
+#   Total: 83 violations (test files and healthcheck excluded from count).
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # Start from the standard set: govet, errcheck, staticcheck, unused, ineffassign.
+  default: standard
+  enable:
+    - gocritic
+    - bodyclose
+    - nilerr
+    - noctx
+    - gosec
+    - unconvert
+    - unparam
+    - misspell
+
+  settings:
+    errcheck:
+      exclude-functions:
+        # HTTP response writes -- if Write fails the connection is already dead.
+        - (net/http.ResponseWriter).Write
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+
+    gosec:
+      excludes:
+        # Unhandled errors -- already covered by errcheck with finer granularity.
+        - G104
+        # math/rand usage -- deterministic random is correct for game mechanics
+        # (events, bitcoin simulation). Crypto random is not needed here.
+        - G404
+        # File inclusion via variable -- only used for Docker secrets path
+        # ("/run/secrets/" + name), a controlled non-user-input path.
+        - G304
+
+    staticcheck:
+      checks:
+        - "all"
+        # Disable style checks -- the codebase has no package comments or
+        # Go-style doc comments yet. These are aspirational, not blocking.
+        - "-ST*"
+        # Disable quick-fix suggestions -- useful but not lint-blocking.
+        - "-QF*"
+
+  exclusions:
+    rules:
+      # Test files: allow unchecked errors for setup/teardown (conn.Close,
+      # SetReadDeadline, etc.) -- test failures surface these anyway.
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Test files: bodyclose false positive on websocket.Dial upgrade response.
+      - path: _test\.go
+        linters:
+          - bodyclose
+      # Test files: unparam is noisy in test helpers where fixed values
+      # improve readability over parameterization.
+      - path: _test\.go
+        linters:
+          - unparam
+      # Healthcheck binary is a simple one-shot probe -- Slowloris (G112),
+      # unclosed response body, and http.Get without context are all acceptable.
+      - path: cmd/healthcheck/
+        linters:
+          - gosec
+          - bodyclose
+          - noctx
+
+issues:
+  # Show all issues so Task #50 has full scope of cleanup work.
+  max-issues-per-linter: 0
+  max-same-issues: 0

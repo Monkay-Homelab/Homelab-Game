@@ -1,0 +1,17 @@
+[Unit]
+Description=Homelab the Game - Daily Database Backup Timer
+Documentation=file:///root/project/scripts/BACKUP.md
+
+[Timer]
+# Run daily at 03:00 local time (low-traffic window for a game server)
+OnCalendar=*-*-* 03:00:00
+
+# If the machine was off at 03:00, run the backup when it comes back up
+Persistent=true
+
+# Add up to 15 minutes of random delay to avoid thundering herd
+# (relevant if multiple services have timers at 03:00)
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target

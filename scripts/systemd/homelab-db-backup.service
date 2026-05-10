@@ -1,0 +1,22 @@
+[Unit]
+Description=Homelab the Game - PostgreSQL Database Backup
+Documentation=file:///root/project/scripts/BACKUP.md
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/project/scripts/db-backup.sh
+User=root
+Group=root
+
+# Logging to journal (viewable via: journalctl -u homelab-db-backup.service)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homelab-db-backup
+
+# Hardening: restrict what the backup process can do
+ProtectSystem=strict
+ReadWritePaths=/var/backups/homelab-game /var/run/postgresql
+PrivateTmp=true
+NoNewPrivileges=true
