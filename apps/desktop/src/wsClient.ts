@@ -1,6 +1,7 @@
 import { api, type GameState } from './api';
 import { WS_URL } from './config';
 import type { GameEvent } from './stores/gameStore';
+import { randomId } from './utils/randomId';
 
 const ACTION_TIMEOUT_MS = 10_000;
 
@@ -78,7 +79,7 @@ class WSClient {
       return api.action(action, payload);
     }
 
-    const id = crypto.randomUUID();
+    const id = randomId();
 
     return new Promise<GameState>((resolve, reject) => {
       const timer = setTimeout(() => {
