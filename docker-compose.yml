@@ -1,5 +1,6 @@
 # Plain Docker Compose deployment (not Swarm). For Swarm use docker-stack.yml.
-# Launch: docker compose --env-file apps/backend/.env up -d
+# Setup: cp .env.example .env  (then fill in DB_PASSWORD and JWT_SECRET)
+# Launch: docker compose up -d
 # External nginx terminates TLS and proxies api.homelab.living -> :8085, game.homelab.living -> :8086
 
 services:
