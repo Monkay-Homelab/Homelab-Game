@@ -18,10 +18,6 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared/ packages/shared/
 COPY apps/desktop/ apps/desktop/
 
-# Build-time API URL (defaults to production)
-ARG VITE_API_URL=https://api.homelab.living
-ENV VITE_API_URL=$VITE_API_URL
-
 RUN cd apps/desktop && pnpm build
 
 # ---- Runtime stage ----
@@ -29,6 +25,8 @@ FROM nginx:1.27-alpine
 
 COPY --from=builder /app/apps/desktop/dist /usr/share/nginx/html
 COPY apps/desktop/nginx.conf /etc/nginx/conf.d/default.conf
+COPY apps/desktop/docker-entrypoint.d/40-config-js.sh /docker-entrypoint.d/40-config-js.sh
+RUN chmod +x /docker-entrypoint.d/40-config-js.sh
 
 EXPOSE 80
 

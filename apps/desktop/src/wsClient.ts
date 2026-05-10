@@ -1,9 +1,6 @@
 import { api, type GameState } from './api';
+import { WS_URL } from './config';
 import type { GameEvent } from './stores/gameStore';
-
-const WS_URL = (import.meta.env.VITE_API_URL || 'https://api.homelab.living')
-  .replace('https://', 'wss://')
-  .replace('http://', 'ws://');
 
 const ACTION_TIMEOUT_MS = 10_000;
 
